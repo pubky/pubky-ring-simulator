@@ -7,7 +7,6 @@ import {
   isIdentityReady,
   parseAuthRequest,
   signUpIdentity,
-  type AuthRequestPreview,
   type SignerIdentity,
 } from "./pubky";
 
@@ -23,12 +22,6 @@ declare global {
   interface Window {
     BarcodeDetector?: BarcodeDetectorConstructor;
   }
-}
-
-interface ApprovalHistoryItem {
-  at: string;
-  capabilities: string[];
-  publicKey: string;
 }
 
 interface LoginFeedback {
@@ -50,23 +43,22 @@ type Route = "identities" | "identity" | "rename" | "authorize" | "auth";
 
 interface State {
   activeIdentityId?: string;
-  approvals: ApprovalHistoryItem[];
   authInput: string;
-  authRequest?: AuthRequestPreview;
-  busy?: string;
+  busy: boolean;
   error?: string;
   identities: SignerIdentity[];
   identityNames: Record<string, string>;
   localServiceAccess: Record<number, LocalServiceAccess>;
   loginFeedback?: LoginFeedback;
-  notice?: string;
   scanActive: boolean;
-  scanSource?: "camera" | "screen";
 }
 
 const PUBKY_DOCKER_URL = "https://github.com/pubky/pubky-docker";
 const PROJECT_URL = "https://github.com/pubky/pubky-ring-simulator";
 const RING_LOGO_URL = "https://pubkyring.app/pubky-ring-logo.svg";
+const IDENTITY_ROUTE_PREFIX = "#/identities/";
+const AUTHORIZE_ROUTE_PREFIX = "#/authorize/";
+const RENAME_ROUTE_PREFIX = "#/rename/";
 const LOCAL_SERVICES: LocalService[] = [
   {
     name: "PKARR relay",
@@ -96,8 +88,8 @@ const htmlEscapes: Record<string, string> = {
   "'": "&#039;",
 };
 const state: State = {
-  approvals: [],
   authInput: "",
+  busy: false,
   identities: [],
   identityNames: {},
   localServiceAccess: Object.fromEntries(
@@ -280,7 +272,7 @@ function identityCard(identity: SignerIdentity, index: number) {
         <span class="identity-chevron" aria-hidden="true">&gt;</span>
       </button>
       <button
-        class="identity-authorize"
+        class="identity-action identity-authorize"
         type="button"
         data-authorize-identity-id="${escapeHtml(identity.id)}"
         ${disabledAttr()}
@@ -308,7 +300,7 @@ function identityDetailPage() {
         </div>
         <div class="identity-detail-actions">
           <button
-            class="identity-authorize detail-authorize"
+            class="identity-action identity-authorize"
             type="button"
             data-authorize-identity-id="${escapeHtml(identity.id)}"
             ${disabledAttr()}
@@ -319,7 +311,7 @@ function identityDetailPage() {
       </div>
       <div class="identity-secondary-actions">
         <button
-          class="identity-rename"
+          class="identity-action"
           type="button"
           data-rename-identity-id="${escapeHtml(identity.id)}"
           ${disabledAttr()}
@@ -327,7 +319,7 @@ function identityDetailPage() {
           ${pencilIcon()} Rename
         </button>
         <button
-          class="identity-delete"
+          class="identity-action"
           type="button"
           data-delete-identity-id="${escapeHtml(identity.id)}"
           ${disabledAttr()}
@@ -345,9 +337,7 @@ function renamePage() {
 
   return `
     <section class="screen-section rename-screen">
-      <div class="rename-heading">
-        <h1>Rename</h1>
-      </div>
+      <h1 class="page-heading">Rename</h1>
 
       <div class="rename-identity">
         ${identityAvatar(identity)}
@@ -380,9 +370,7 @@ function authorizePage() {
 
   return `
     <section class="screen-section regular-authorize-screen">
-      <div class="authorize-heading">
-        <h1>Authorize</h1>
-      </div>
+      <h1 class="page-heading">Authorize</h1>
 
       <div class="authorize-identity">
         ${identityAvatar(identity)}
@@ -402,13 +390,13 @@ function authorizePage() {
           state.scanActive
             ? `
               <button id="stop-scan" class="button authorize-source wide" type="button">
-                ${closeIcon()} Stop camera
+                ${closeIcon()} Stop sharing
               </button>
               ${captureView()}
             `
             : `
               <button id="start-authorize-scan" class="button authorize-source wide" type="button" ${disabledAttr()}>
-                ${scanIcon()} Use camera
+                ${scanIcon()} Share screen
               </button>
             `
         }
@@ -441,19 +429,13 @@ function authPage() {
 }
 
 function captureView() {
-  const label =
-    state.scanSource === "camera"
-      ? "Looking for a QR code with the camera"
-      : "Looking for a QR code on screen";
-
   return `
     <div class="capture-view">
       <video id="scan-video" autoplay muted playsinline></video>
-      <span><i></i> ${label}</span>
+      <span><i></i> Looking for a QR code on screen</span>
     </div>
   `;
 }
-
 
 function modeSwitcher(route: Route) {
   const regularActive = route !== "auth";
@@ -467,9 +449,7 @@ function modeSwitcher(route: Route) {
         ${regularActive ? 'aria-current="page"' : ""}
       >
         <span class="mode-icon" aria-hidden="true">${keyringIcon()}</span>
-        <span class="mode-copy">
-          <strong>Regular</strong>
-        </span>
+        <strong>Regular</strong>
       </a>
       <a
         href="#/auth"
@@ -477,9 +457,7 @@ function modeSwitcher(route: Route) {
         ${route === "auth" ? 'aria-current="page"' : ""}
       >
         <span class="mode-icon" aria-hidden="true">${boltIcon()}</span>
-        <span class="mode-copy">
-          <strong>Shortcut</strong>
-        </span>
+        <strong>Shortcut</strong>
       </a>
     </nav>
   `;
@@ -572,8 +550,7 @@ function handleClick(event: MouseEvent) {
   if (authorizeButton?.dataset.authorizeIdentityId) {
     setActiveIdentityId(authorizeButton.dataset.authorizeIdentityId);
     state.authInput = "";
-    state.authRequest = undefined;
-    clearStatus();
+    clearError();
     window.location.hash = authorizeHref(
       authorizeButton.dataset.authorizeIdentityId,
     );
@@ -593,7 +570,7 @@ function handleClick(event: MouseEvent) {
   );
   if (renameButton?.dataset.renameIdentityId) {
     setActiveIdentityId(renameButton.dataset.renameIdentityId);
-    clearStatus();
+    clearError();
     window.location.hash = renameHref(renameButton.dataset.renameIdentityId);
     return;
   }
@@ -602,8 +579,10 @@ function handleClick(event: MouseEvent) {
     target.closest<HTMLButtonElement>("[data-identity-id]");
   if (identityButton?.dataset.identityId) {
     setActiveIdentityId(identityButton.dataset.identityId);
-    clearStatus();
-    window.location.hash = identityDetailHref(identityButton.dataset.identityId);
+    clearError();
+    window.location.hash = identityDetailHref(
+      identityButton.dataset.identityId,
+    );
     return;
   }
 
@@ -612,13 +591,13 @@ function handleClick(event: MouseEvent) {
 
   switch (button.id) {
     case "start-authorize-scan":
-      void handleStartScan("camera");
+      void handleStartScan();
       break;
     case "paste-authorize-link":
       void handlePasteAuthorizeLink();
       break;
     case "stop-scan":
-      stopScanCapture("QR capture stopped.");
+      stopScanCapture();
       break;
   }
 }
@@ -646,7 +625,6 @@ function handleInput(event: Event) {
   if (input.id !== "shortcut-auth-input") return;
 
   state.authInput = input.value;
-  state.authRequest = undefined;
 
   if (
     event instanceof InputEvent &&
@@ -669,18 +647,24 @@ function handlePaste(event: ClipboardEvent) {
   event.preventDefault();
   input.value = authLink;
   state.authInput = authLink;
-  state.authRequest = undefined;
   void handleQuickAuth(authLink);
 }
 
 async function handleCreateIdentity() {
-  await run("Creating a fresh test identity…", async () => {
+  beginLoginFeedback("Creating identity…");
+
+  await run(async () => {
     const identity = createIdentity();
     setActiveIdentity(identity);
-    updateBusy("Registering it on your local testnet…");
+    render();
     setActiveIdentity(await signUpIdentity(identity));
-    setNotice(`${identityName(identity)} is ready.`);
   });
+
+  if (state.error) {
+    showLoginFeedback("Could not create identity", "error", state.error);
+  } else {
+    showLoginFeedback("Identity ready", "success");
+  }
 }
 
 function handleRename(form: HTMLFormElement) {
@@ -691,7 +675,7 @@ function handleRename(form: HTMLFormElement) {
   if (!name) return;
 
   state.identityNames[identity.id] = name;
-  clearStatus();
+  clearError();
   window.location.hash = identityDetailHref(identity.id);
 }
 
@@ -699,31 +683,17 @@ async function handleQuickAuth(authLink: string) {
   state.authInput = authLink;
   beginLoginFeedback("Signing in…");
 
-  await run("Checking the local auth request…", async () => {
-    const request = assertSupportedAuthRequest(
-      parseAuthRequest(state.authInput),
-    );
-    state.authRequest = request;
+  await run(async () => {
+    const request = assertSupportedAuthRequest(parseAuthRequest(authLink));
     const identity = await identityForQuickAuth();
 
-    updateBusy(`Signing in as ${identityName(identity)}…`);
-    await approveAuthRequest(identity, request.url);
-    state.approvals = [
-      {
-        at: new Date().toISOString(),
-        capabilities: request.capabilities,
-        publicKey: identity.publicKey,
-      },
-      ...state.approvals,
-    ].slice(0, 5);
-    setNotice(`Signed in as ${identityName(identity)}.`);
+    await approveAuthRequest(identity, request);
   });
 
   if (state.error) {
     showLoginFeedback("Login failed", "error", state.error);
   } else {
     state.authInput = "";
-    state.authRequest = undefined;
     showLoginFeedback("Logged in", "success");
   }
 }
@@ -737,7 +707,8 @@ async function handlePasteAuthorizeLink() {
 
   try {
     const input = await navigator.clipboard.readText();
-    if (!input.trim()) throw new Error("The clipboard does not contain a link.");
+    if (!input.trim())
+      throw new Error("The clipboard does not contain a link.");
     await handleAuthorizeInput(input);
   } catch (error) {
     setError(error);
@@ -752,21 +723,11 @@ async function handleAuthorizeInput(input: string) {
   state.authInput = input;
   beginLoginFeedback("Signing in…");
 
-  await run("Approving auth request…", async () => {
-    const request = parseAuthRequest(state.authInput);
-    state.authRequest = request;
+  await run(async () => {
+    const request = assertSupportedAuthRequest(parseAuthRequest(input));
     const readyIdentity = await signUpIdentity(identity);
     setActiveIdentity(readyIdentity);
-    await approveAuthRequest(readyIdentity, request.url);
-    state.approvals = [
-      {
-        at: new Date().toISOString(),
-        capabilities: request.capabilities,
-        publicKey: readyIdentity.publicKey,
-      },
-      ...state.approvals,
-    ].slice(0, 5);
-    setNotice(`Authorized with ${identityName(readyIdentity)}.`);
+    await approveAuthRequest(readyIdentity, request);
   });
 
   if (state.error) {
@@ -775,7 +736,6 @@ async function handleAuthorizeInput(input: string) {
   }
 
   state.authInput = "";
-  state.authRequest = undefined;
   showLoginFeedback("Logged in", "success");
   window.location.hash = identityDetailHref(identity.id);
 }
@@ -789,7 +749,7 @@ async function identityForQuickAuth() {
 
   if (readyIdentity) {
     setActiveIdentityId(readyIdentity.id);
-    updateBusy("Checking the active identity…");
+    render();
     const verifiedIdentity = await signUpIdentity(readyIdentity);
     setActiveIdentity(verifiedIdentity);
     return verifiedIdentity;
@@ -797,15 +757,13 @@ async function identityForQuickAuth() {
 
   const identity = active || createIdentity();
   setActiveIdentity(identity);
-  updateBusy(
-    active ? "Finishing identity setup…" : "Creating your first test identity…",
-  );
+  render();
   const signedUpIdentity = await signUpIdentity(identity);
   setActiveIdentity(signedUpIdentity);
   return signedUpIdentity;
 }
 
-async function handleStartScan(label: "camera" | "screen") {
+async function handleStartScan() {
   if (!window.BarcodeDetector) {
     setError(
       "Screen QR scanning needs Chrome or Edge. You can paste the auth link instead.",
@@ -822,7 +780,7 @@ async function handleStartScan(label: "camera" | "screen") {
 
   const BarcodeDetector = window.BarcodeDetector;
 
-  await run("Starting screen capture…", async () => {
+  await run(async () => {
     const detector = new BarcodeDetector({ formats: ["qr_code"] });
     const stream = await navigator.mediaDevices.getDisplayMedia({
       audio: false,
@@ -830,14 +788,13 @@ async function handleStartScan(label: "camera" | "screen") {
     });
     stream.getVideoTracks().forEach((track) => {
       track.addEventListener("ended", () => {
-        stopScanCapture("Screen capture ended.");
+        stopScanCapture();
       });
     });
     scanDetector = detector;
     scanStream = stream;
     state.scanActive = true;
-    state.scanSource = label;
-    clearStatus();
+    clearError();
   });
 
   if (state.scanActive) queueScan();
@@ -880,17 +837,8 @@ async function scanScreenFrame() {
       return;
     }
 
-    if (currentRoute() === "authorize") {
-      stopScanCapture("Local auth QR found.");
-      void handleAuthorizeInput(rawValue);
-      return;
-    }
-
-    state.authInput = rawValue;
-    state.authRequest = assertSupportedAuthRequest(
-      parseAuthRequest(rawValue),
-    );
-    stopScanCapture("Local auth QR found.");
+    stopScanCapture();
+    if (currentRoute() === "authorize") void handleAuthorizeInput(rawValue);
   } catch (error) {
     if (!state.scanActive) return;
     setError(error);
@@ -915,7 +863,7 @@ async function detectQrValue(video: HTMLVideoElement) {
   return barcodes.find((barcode) => barcode.rawValue)?.rawValue;
 }
 
-function stopScanCapture(notice?: string) {
+function stopScanCapture() {
   window.clearTimeout(scanTimer);
   scanTimer = undefined;
   scanStream?.getTracks().forEach((track) => {
@@ -924,19 +872,14 @@ function stopScanCapture(notice?: string) {
   scanStream = undefined;
   scanDetector = undefined;
   state.scanActive = false;
-  state.scanSource = undefined;
 
-  if (notice) setNotice(notice);
   render();
 }
 
 function handleRouteChange() {
   const route = currentRoute();
-  const scanBelongsToRoute =
-    (route === "auth" && state.scanSource === "screen") ||
-    (route === "authorize" && state.scanSource === "camera");
 
-  if (!scanBelongsToRoute && state.scanActive) {
+  if (route !== "authorize" && state.scanActive) {
     stopScanCapture();
     return;
   }
@@ -950,18 +893,30 @@ function activeIdentity() {
 }
 
 function detailIdentity() {
-  const id = detailIdentityId();
-  return state.identities.find((identity) => identity.id === id);
+  return routeIdentity(IDENTITY_ROUTE_PREFIX);
 }
 
 function authorizeIdentity() {
-  const id = authorizeIdentityId();
-  return state.identities.find((identity) => identity.id === id);
+  return routeIdentity(AUTHORIZE_ROUTE_PREFIX);
 }
 
 function renameIdentity() {
-  const id = renameIdentityId();
+  return routeIdentity(RENAME_ROUTE_PREFIX);
+}
+
+function routeIdentity(prefix: string) {
+  const id = routeIdentityId(prefix);
   return state.identities.find((identity) => identity.id === id);
+}
+
+function routeIdentityId(prefix: string) {
+  if (!window.location.hash.startsWith(prefix)) return undefined;
+
+  try {
+    return decodeURIComponent(window.location.hash.slice(prefix.length));
+  } catch {
+    return undefined;
+  }
 }
 
 function deleteIdentity(id: string) {
@@ -970,7 +925,7 @@ function deleteIdentity(id: string) {
   if (state.activeIdentityId === id) {
     setActiveIdentityId(state.identities[0]?.id);
   }
-  clearStatus();
+  clearError();
   window.location.hash = "#/identities";
 }
 
@@ -988,9 +943,9 @@ function setActiveIdentityId(id: string | undefined) {
   state.activeIdentityId = id;
 }
 
-async function run(label: string, task: () => Promise<void>) {
-  state.busy = label;
-  clearStatus();
+async function run(task: () => Promise<void>) {
+  state.busy = true;
+  clearError();
   render();
 
   try {
@@ -998,14 +953,9 @@ async function run(label: string, task: () => Promise<void>) {
   } catch (error) {
     setError(error);
   } finally {
-    state.busy = undefined;
+    state.busy = false;
     render();
   }
-}
-
-function updateBusy(label: string) {
-  state.busy = label;
-  render();
 }
 
 function identityName(identity: SignerIdentity) {
@@ -1032,25 +982,18 @@ function identityAvatar(identity: SignerIdentity) {
   `;
 }
 
-function setNotice(notice: string) {
-  state.notice = notice;
-  state.error = undefined;
-}
-
 function setError(error: unknown) {
   state.error = formatError(error);
-  state.notice = undefined;
 }
 
-function clearStatus() {
+function clearError() {
   state.error = undefined;
-  state.notice = undefined;
 }
 
-function beginLoginFeedback(title: string, detail?: string) {
+function beginLoginFeedback(title: string) {
   window.clearTimeout(loginFeedbackTimer);
   loginFeedbackTimer = undefined;
-  state.loginFeedback = { detail, kind: "progress", title };
+  state.loginFeedback = { kind: "progress", title };
 }
 
 function showLoginFeedback(
@@ -1082,49 +1025,20 @@ function currentRoute(): Route {
   return "identities";
 }
 
-function detailIdentityId() {
-  const prefix = "#/identities/";
-  if (!window.location.hash.startsWith(prefix)) return undefined;
-
-  try {
-    return decodeURIComponent(window.location.hash.slice(prefix.length));
-  } catch {
-    return undefined;
-  }
-}
-
 function identityDetailHref(id: string) {
-  return `#/identities/${encodeURIComponent(id)}`;
-}
-
-function authorizeIdentityId() {
-  const prefix = "#/authorize/";
-  if (!window.location.hash.startsWith(prefix)) return undefined;
-
-  try {
-    return decodeURIComponent(window.location.hash.slice(prefix.length));
-  } catch {
-    return undefined;
-  }
+  return routeHref(IDENTITY_ROUTE_PREFIX, id);
 }
 
 function authorizeHref(id: string) {
-  return `#/authorize/${encodeURIComponent(id)}`;
-}
-
-function renameIdentityId() {
-  const prefix = "#/rename/";
-  if (!window.location.hash.startsWith(prefix)) return undefined;
-
-  try {
-    return decodeURIComponent(window.location.hash.slice(prefix.length));
-  } catch {
-    return undefined;
-  }
+  return routeHref(AUTHORIZE_ROUTE_PREFIX, id);
 }
 
 function renameHref(id: string) {
-  return `#/rename/${encodeURIComponent(id)}`;
+  return routeHref(RENAME_ROUTE_PREFIX, id);
+}
+
+function routeHref(prefix: string, id: string) {
+  return `${prefix}${encodeURIComponent(id)}`;
 }
 
 function appBackHref(route: Route) {
@@ -1155,8 +1069,8 @@ function overviewPubky(value: string) {
   return `${pubky.slice(0, 5)}...${pubky.slice(-5)}`;
 }
 
-function disabledAttr(disabled = false) {
-  return state.busy || disabled ? "disabled" : "";
+function disabledAttr() {
+  return state.busy ? "disabled" : "";
 }
 
 function getAppElement() {
