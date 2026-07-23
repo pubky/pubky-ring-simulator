@@ -113,15 +113,6 @@ p {
     0 0 30px rgba(255, 145, 0, 0.08);
 }
 
-.developer-banner::before {
-  position: absolute;
-  inset: -1px auto auto -1px;
-  width: 56%;
-  height: 2px;
-  background: linear-gradient(90deg, #ff9d21, rgba(255, 157, 33, 0));
-  content: "";
-}
-
 .banner-icon {
   display: grid;
   width: 2.75rem;
