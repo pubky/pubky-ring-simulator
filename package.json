@@ -1,0 +1,21 @@
+{
+  "name": "pubky-ring-simulator",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "audit": "npm audit --audit-level=moderate",
+    "build": "tsc && vite build",
+    "check": "tsc",
+    "dev": "vite",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@synonymdev/pubky": "^0.9.3",
+    "jdenticon": "^3.3.0"
+  },
+  "devDependencies": {
+    "typescript": "~7.0.2",
+    "vite": "^8.1.5"
+  }
+}
