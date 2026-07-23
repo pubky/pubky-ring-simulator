@@ -184,6 +184,7 @@ p {
   display: grid;
   width: min(160px, calc(100% - 18px));
   grid-template-columns: 1fr;
+  grid-column: 1;
   align-self: center;
   justify-self: end;
   gap: 6px;
@@ -193,6 +194,16 @@ p {
   border-radius: 20px;
   background: rgba(20, 20, 22, 0.96);
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.34);
+}
+
+.side-panel-label {
+  padding: 5px 10px 2px;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-align: center;
+  text-transform: uppercase;
 }
 
 .mode-switcher a {
@@ -260,6 +271,107 @@ p {
 .mode-copy strong {
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+.local-services-panel {
+  display: grid;
+  width: min(220px, calc(100% - 10px));
+  grid-column: 3;
+  align-self: center;
+  justify-self: start;
+  gap: 10px;
+  margin-left: 10px;
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.82);
+  cursor: default;
+}
+
+.local-services-panel header {
+  display: grid;
+  gap: 2px;
+}
+
+.local-services-panel header strong {
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.local-services-panel ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.local-services-panel li {
+  display: grid;
+  gap: 3px;
+  padding: 9px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.local-service-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.local-service-title strong {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-service-port {
+  flex: 0 0 auto;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.local-services-panel li > small {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.local-service-access {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.local-service-access i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.local-services-panel li.accessible .local-service-access {
+  color: #70d69b;
+}
+
+.local-services-panel li.failed .local-service-access {
+  color: #ff8d83;
+}
+
+.local-services-panel li.checking .local-service-access {
+  color: #e4b462;
 }
 
 .phone-stage::before {
@@ -1426,6 +1538,10 @@ textarea:focus {
     grid-row: 1;
     justify-self: center;
     margin: 0 auto 0.65rem;
+  }
+
+  .local-services-panel {
+    display: none;
   }
 
   .phone-stage {

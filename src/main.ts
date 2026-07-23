@@ -37,6 +37,15 @@ interface LoginFeedback {
   title: string;
 }
 
+type LocalServiceAccess = "checking" | "accessible" | "failed";
+
+interface LocalService {
+  name: string;
+  port: number;
+  purpose: string;
+  url: string;
+}
+
 type Route = "identities" | "identity" | "rename" | "authorize" | "auth";
 
 interface State {
@@ -48,6 +57,7 @@ interface State {
   error?: string;
   identities: SignerIdentity[];
   identityNames: Record<string, string>;
+  localServiceAccess: Record<number, LocalServiceAccess>;
   loginFeedback?: LoginFeedback;
   notice?: string;
   scanActive: boolean;
@@ -57,6 +67,26 @@ interface State {
 const PUBKY_DOCKER_URL = "https://github.com/pubky/pubky-docker";
 const PROJECT_URL = "https://github.com/pubky/pubky-ring-simulator";
 const RING_LOGO_URL = "https://pubkyring.app/pubky-ring-logo.svg";
+const LOCAL_SERVICES: LocalService[] = [
+  {
+    name: "PKARR relay",
+    port: 15411,
+    purpose: "Resolve local Pubkys",
+    url: "http://localhost:15411/",
+  },
+  {
+    name: "Homeserver",
+    port: 6286,
+    purpose: "Sign up and access data",
+    url: "http://localhost:6286/",
+  },
+  {
+    name: "Admin API",
+    port: 6288,
+    purpose: "Create signup tokens",
+    url: "http://127.0.0.1:6288/",
+  },
+];
 const app = getAppElement();
 const htmlEscapes: Record<string, string> = {
   "&": "&amp;",
@@ -70,6 +100,9 @@ const state: State = {
   authInput: "",
   identities: [],
   identityNames: {},
+  localServiceAccess: Object.fromEntries(
+    LOCAL_SERVICES.map((service) => [service.port, "checking"]),
+  ),
   scanActive: false,
 };
 
@@ -78,14 +111,22 @@ let scanDetector: BarcodeDetectorLike | undefined;
 let scanTimer: number | undefined;
 let scanCanvas: HTMLCanvasElement | undefined;
 let loginFeedbackTimer: number | undefined;
+let localServiceProbeActive = false;
 
 app.addEventListener("click", handleClick);
 app.addEventListener("submit", handleSubmit);
 app.addEventListener("input", handleInput);
 app.addEventListener("paste", handlePaste);
 window.addEventListener("hashchange", handleRouteChange);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void probeLocalServices();
+});
 
 render();
+void probeLocalServices();
+window.setInterval(() => {
+  void probeLocalServices();
+}, 15_000);
 
 function render() {
   const route = currentRoute();
@@ -118,6 +159,8 @@ function render() {
             </div>
           </div>
         </section>
+
+        ${localServicesPanel()}
       </div>
 
       <footer class="site-footer">
@@ -417,6 +460,7 @@ function modeSwitcher(route: Route) {
 
   return `
     <nav class="mode-switcher" aria-label="Simulator mode">
+      <span class="side-panel-label">Choose mode</span>
       <a
         href="#/identities"
         class="${regularActive ? "active" : ""}"
@@ -439,6 +483,83 @@ function modeSwitcher(route: Route) {
       </a>
     </nav>
   `;
+}
+
+function localServicesPanel() {
+  return `
+    <aside class="local-services-panel" aria-label="Local testnet service status">
+      <header>
+        <strong>Access to local testnet</strong>
+      </header>
+      <ul aria-live="polite">
+        ${LOCAL_SERVICES.map(localServiceRow).join("")}
+      </ul>
+    </aside>
+  `;
+}
+
+function localServiceRow(service: LocalService) {
+  const access = state.localServiceAccess[service.port] || "checking";
+  const label =
+    access === "accessible"
+      ? "Accessible"
+      : access === "failed"
+        ? "Failed"
+        : "Checking";
+
+  return `
+    <li class="${access}">
+      <div class="local-service-title">
+        <strong>${escapeHtml(service.name)}</strong>
+        <span class="local-service-port">:${service.port}</span>
+      </div>
+      <small>${escapeHtml(service.purpose)}</small>
+      <span class="local-service-access">
+        <i aria-hidden="true"></i>
+        ${label}
+      </span>
+    </li>
+  `;
+}
+
+async function probeLocalServices() {
+  if (localServiceProbeActive || document.visibilityState === "hidden") return;
+  localServiceProbeActive = true;
+
+  try {
+    await Promise.all(
+      LOCAL_SERVICES.map(async (service) => {
+        state.localServiceAccess[service.port] =
+          await probeLocalService(service);
+        refreshLocalServicesPanel();
+      }),
+    );
+  } finally {
+    localServiceProbeActive = false;
+  }
+}
+
+async function probeLocalService(service: LocalService) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 4_000);
+
+  try {
+    await fetch(service.url, {
+      cache: "no-store",
+      credentials: "omit",
+      signal: controller.signal,
+    });
+    return "accessible" as const;
+  } catch {
+    return "failed" as const;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function refreshLocalServicesPanel() {
+  const panel = document.querySelector<HTMLElement>(".local-services-panel");
+  if (panel) panel.outerHTML = localServicesPanel();
 }
 
 function handleClick(event: MouseEvent) {
