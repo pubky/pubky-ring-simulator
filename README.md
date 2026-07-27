@@ -4,7 +4,7 @@
 > **This is temporary developer tooling and a prototype. It will be replaced.**
 > It is not Pubky Ring and must never be used for real identities.
 
-**Live simulator:** [pubky.github.io/pubky-ring-simulator](https://pubky.github.io/pubky-ring-simulator/)
+**Live simulator:** [simulator.pubkyring.app](https://simulator.pubkyring.app/)
 
 Pubky Ring Simulator is an opinionated browser tool for testing Pubky authentication with multiple
 disposable identities. Its interface is inspired by
