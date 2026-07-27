@@ -1,8 +1,9 @@
 # Pubky Ring Simulator
 
 > [!WARNING]
-> **This is temporary developer tooling and a prototype. It will be replaced.**
-> It is not Pubky Ring and must never be used for real identities.
+> This is experimental developer tooling, built quickly for local testing rather than engineered to
+> production standards. It is not Pubky Ring and should not be relied on for real identities or any
+> use beyond development and testing.
 
 **Live simulator:** [simulator.pubkyring.app](https://simulator.pubkyring.app/)
 
