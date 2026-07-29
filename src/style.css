@@ -374,6 +374,73 @@ p {
   color: #e4b462;
 }
 
+.local-services-panel li.waiting .local-service-access {
+  color: #e4b462;
+}
+
+.local-access-dialog {
+  width: min(460px, calc(100% - 2rem));
+  margin: auto;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 24px;
+  color: #f7f8fb;
+  background:
+    radial-gradient(
+      circle at 100% 0,
+      rgba(var(--ring-blue-rgb), 0.18),
+      transparent 14rem
+    ),
+    #121417;
+  box-shadow:
+    0 32px 90px rgba(0, 0, 0, 0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: local-access-dialog-in 180ms ease-out;
+}
+
+.local-access-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.local-access-dialog h2 {
+  margin: 0 0 9px;
+  font-size: 1.75rem;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+
+.local-access-description {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.local-access-note {
+  margin: 20px 0;
+  padding: 13px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.055);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.local-access-note a {
+  color: #70b8ff;
+  font-weight: 700;
+  text-underline-offset: 3px;
+}
+
+@keyframes local-access-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
 .phone-stage::before {
   position: absolute;
   z-index: -1;

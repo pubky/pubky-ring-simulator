@@ -37,7 +37,7 @@ interface LoginFeedback {
   title: string;
 }
 
-type LocalServiceAccess = "checking" | "accessible" | "failed";
+type LocalServiceAccess = "waiting" | "checking" | "accessible" | "failed";
 
 interface LocalService {
   name: string;
@@ -57,6 +57,7 @@ interface State {
   error?: string;
   identities: SignerIdentity[];
   identityNames: Record<string, string>;
+  localAccessExplanationVisible: boolean;
   localServiceAccess: Record<number, LocalServiceAccess>;
   loginFeedback?: LoginFeedback;
   notice?: string;
@@ -100,6 +101,7 @@ const state: State = {
   authInput: "",
   identities: [],
   identityNames: {},
+  localAccessExplanationVisible: false,
   localServiceAccess: Object.fromEntries(
     LOCAL_SERVICES.map((service) => [service.port, "checking"]),
   ),
@@ -112,18 +114,22 @@ let scanTimer: number | undefined;
 let scanCanvas: HTMLCanvasElement | undefined;
 let loginFeedbackTimer: number | undefined;
 let localServiceProbeActive = false;
+let localServiceProbeEnabled = false;
+let localServicePermissionPromptPending = false;
+let localServicePermissionStatus: PermissionStatus | undefined;
 
 app.addEventListener("click", handleClick);
 app.addEventListener("submit", handleSubmit);
 app.addEventListener("input", handleInput);
 app.addEventListener("paste", handlePaste);
+app.addEventListener("cancel", handleDialogCancel, true);
 window.addEventListener("hashchange", handleRouteChange);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") void probeLocalServices();
 });
 
 render();
-void probeLocalServices();
+void initializeLocalServiceAccess();
 window.setInterval(() => {
   void probeLocalServices();
 }, 15_000);
@@ -170,9 +176,11 @@ function render() {
         </a>
       </footer>
     </main>
+    ${localAccessExplanation()}
   `;
 
   attachScanVideo();
+  openLocalAccessExplanation();
 }
 
 function developerBanner() {
@@ -498,6 +506,43 @@ function localServicesPanel() {
   `;
 }
 
+function localAccessExplanation() {
+  if (!state.localAccessExplanationVisible) return "";
+
+  return `
+    <dialog
+      id="local-access-dialog"
+      class="local-access-dialog"
+      aria-labelledby="local-access-title"
+      aria-describedby="local-access-description local-access-note"
+    >
+      <h2 id="local-access-title">Allow access to localhost</h2>
+      <p id="local-access-description" class="local-access-description">
+        Your browser requires access to the testnet services running on your machine.
+      </p>
+      <p id="local-access-note" class="local-access-note">
+        <a href="${PROJECT_URL}" target="_blank" rel="noreferrer">Run the simulator locally</a>
+        to avoid granting an additional browser permission.
+      </p>
+      <button
+        id="continue-local-access"
+        class="button accent wide"
+        type="button"
+        autofocus
+      >
+        Prompt permission
+      </button>
+    </dialog>
+  `;
+}
+
+function openLocalAccessExplanation() {
+  const dialog = document.querySelector<HTMLDialogElement>(
+    "#local-access-dialog",
+  );
+  if (dialog && !dialog.open) dialog.showModal();
+}
+
 function localServiceRow(service: LocalService) {
   const access = state.localServiceAccess[service.port] || "checking";
   const label =
@@ -505,7 +550,9 @@ function localServiceRow(service: LocalService) {
       ? "Accessible"
       : access === "failed"
         ? "Failed"
-        : "Checking";
+        : access === "waiting"
+          ? "Waiting for access"
+          : "Checking";
 
   return `
     <li class="${access}">
@@ -522,8 +569,105 @@ function localServiceRow(service: LocalService) {
   `;
 }
 
+async function initializeLocalServiceAccess() {
+  if (isLoopbackHost(window.location.hostname)) {
+    localServiceProbeEnabled = true;
+    void probeLocalServices();
+    return;
+  }
+
+  localServicePermissionStatus = await queryLoopbackPermission();
+
+  if (!localServicePermissionStatus) {
+    localServiceProbeEnabled = true;
+    void probeLocalServices();
+    return;
+  }
+
+  localServicePermissionStatus.addEventListener(
+    "change",
+    handleLocalServicePermissionChange,
+  );
+  applyLocalServicePermission(localServicePermissionStatus.state);
+}
+
+function isLoopbackHost(hostname: string) {
+  const normalizedHostname = hostname
+    .toLowerCase()
+    .replace(/^\[(.*)\]$/, "$1")
+    .replace(/\.$/, "");
+
+  return (
+    normalizedHostname === "localhost" ||
+    normalizedHostname.endsWith(".localhost") ||
+    normalizedHostname === "::1" ||
+    /^127(?:\.\d{1,3}){3}$/.test(normalizedHostname)
+  );
+}
+
+async function queryLoopbackPermission() {
+  if (!navigator.permissions?.query || !window.isSecureContext)
+    return undefined;
+
+  const permissionNames = [
+    "loopback-network",
+    "local-network-access",
+  ] as const;
+
+  for (const name of permissionNames) {
+    try {
+      return await navigator.permissions.query({
+        name,
+      } as unknown as PermissionDescriptor);
+    } catch {
+      // Try the legacy permission name before treating the API as unsupported.
+    }
+  }
+
+  return undefined;
+}
+
+function handleLocalServicePermissionChange() {
+  if (localServicePermissionStatus)
+    applyLocalServicePermission(localServicePermissionStatus.state);
+}
+
+function applyLocalServicePermission(permissionState: PermissionState) {
+  if (permissionState === "prompt") {
+    localServiceProbeEnabled = false;
+    state.localAccessExplanationVisible = true;
+    setLocalServiceAccess("waiting");
+    render();
+    return;
+  }
+
+  if (permissionState === "denied") {
+    localServiceProbeEnabled = false;
+    setLocalServiceAccess("failed");
+    render();
+    return;
+  }
+
+  state.localAccessExplanationVisible = false;
+  localServiceProbeEnabled = true;
+  setLocalServiceAccess("checking");
+  render();
+  void probeLocalServices();
+}
+
+function setLocalServiceAccess(access: LocalServiceAccess) {
+  LOCAL_SERVICES.forEach((service) => {
+    state.localServiceAccess[service.port] = access;
+  });
+}
+
 async function probeLocalServices() {
-  if (localServiceProbeActive || document.visibilityState === "hidden") return;
+  if (
+    !localServiceProbeEnabled ||
+    localServiceProbeActive ||
+    document.visibilityState === "hidden"
+  )
+    return;
   localServiceProbeActive = true;
 
   try {
@@ -536,12 +680,21 @@ async function probeLocalServices() {
     );
   } finally {
     localServiceProbeActive = false;
+    localServicePermissionPromptPending = false;
+    if (state.localAccessExplanationVisible) {
+      if (localServicePermissionStatus?.state === "granted")
+        state.localAccessExplanationVisible = false;
+      render();
+    }
   }
 }
 
 async function probeLocalService(service: LocalService) {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 4_000);
+  const timeout = window.setTimeout(
+    () => controller.abort(),
+    localServicePermissionPromptPending ? 30_000 : 4_000,
+  );
 
   try {
     await fetch(service.url, {
@@ -611,6 +764,15 @@ function handleClick(event: MouseEvent) {
   if (!button || button.disabled) return;
 
   switch (button.id) {
+    case "continue-local-access":
+      localServiceProbeEnabled = true;
+      localServicePermissionPromptPending = true;
+      setLocalServiceAccess("checking");
+      button.disabled = true;
+      button.textContent = "Waiting for permission…";
+      refreshLocalServicesPanel();
+      void probeLocalServices();
+      break;
     case "start-authorize-scan":
       void handleStartScan("camera");
       break;
@@ -621,6 +783,14 @@ function handleClick(event: MouseEvent) {
       stopScanCapture("QR capture stopped.");
       break;
   }
+}
+
+function handleDialogCancel(event: Event) {
+  if (
+    event.target instanceof HTMLDialogElement &&
+    event.target.id === "local-access-dialog"
+  )
+    event.preventDefault();
 }
 
 function handleSubmit(event: SubmitEvent) {
