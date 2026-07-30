@@ -547,9 +547,9 @@ function localServiceRow(service: LocalService) {
   const access = state.localServiceAccess[service.port] || "checking";
   const label =
     access === "accessible"
-      ? "Accessible"
+      ? "Reachable"
       : access === "failed"
-        ? "Failed"
+        ? "No response"
         : access === "waiting"
           ? "Waiting for access"
           : "Checking";
