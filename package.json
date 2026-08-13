@@ -11,12 +11,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@synonymdev/pubky": "^0.9.3",
+    "@synonymdev/pubky": "^0.10.0",
     "jdenticon": "^3.3.0"
   },
   "devDependencies": {
     "legacy-pubky": "npm:@synonymdev/pubky@0.9.3",
     "typescript": "~7.0.2",
-    "vite": "^8.1.5"
+    "vite": "^8.2.1"
   }
 }
