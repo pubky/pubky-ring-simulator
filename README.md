@@ -37,11 +37,12 @@ docker compose --profile backend up -d
 ```
 
 The simulator assumes Pubky Docker's default Homeserver identity, local ports, admin endpoint, and
-admin password.
+admin password. Grant requests require a Homeserver build with grant authentication support, so use
+an up-to-date Pubky Docker environment.
 
 ## Quick auth
 
-Paste or screen-scan a `pubkyauth://` sign-in request and use the primary action:
+Paste or screen-scan a `pubkyauth://` cookie or grant sign-in request and use the primary action:
 
 - If the active identity is already registered, it is used immediately.
 - If another registered identity exists, it becomes active and is used.
@@ -50,6 +51,14 @@ Paste or screen-scan a `pubkyauth://` sign-in request and use the primary action
 
 Registration details remain hidden, including obtaining any server-required registration
 credential from the default local admin endpoint.
+
+Regular mode previews whether a request uses grant or legacy cookie authentication, identifies the
+requesting application when provided, and shows whether each capability targets an exact path or a
+directory. Signup requests must target the default local Homeserver. Direct-signup links are not
+supported because the simulator creates and registers test identities itself.
+
+If a request contains callback destinations, the result notification offers a return-to-app link.
+Callback destinations are untrusted and are only opened after you select that link.
 
 ## Development
 
@@ -62,4 +71,10 @@ Build the production site with:
 
 ```bash
 npm run build
+```
+
+Run the auth-link parser tests with:
+
+```bash
+npm test
 ```

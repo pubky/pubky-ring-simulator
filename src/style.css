@@ -557,7 +557,7 @@ p {
   right: 18px;
   left: 18px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 11px;
   min-height: 62px;
@@ -578,6 +578,10 @@ p {
 .login-feedback.error {
   border-color: rgba(255, 142, 142, 0.4);
   background: rgba(61, 28, 31, 0.98);
+}
+
+.login-feedback.cancel {
+  background: rgba(40, 42, 46, 0.98);
 }
 
 .login-feedback-icon {
@@ -621,6 +625,23 @@ p {
   font-size: 0.72rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.login-feedback-action {
+  max-width: 112px;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 750;
+  line-height: 1.2;
+  text-align: center;
+  text-decoration: none;
+}
+
+.login-feedback-action:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .login-feedback-spinner {
@@ -1411,6 +1432,38 @@ textarea:focus {
 .request-preview {
   gap: 12px;
   background: rgba(255, 255, 255, 0.035);
+}
+
+.request-source {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.7rem;
+}
+
+.request-source strong {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.request-client-id {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.65rem;
+}
+
+.request-client-id code {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.8);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.request-actions {
+  display: grid;
+  gap: 8px;
 }
 
 .verified {
