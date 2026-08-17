@@ -15,6 +15,7 @@
     "jdenticon": "^3.3.0"
   },
   "devDependencies": {
+    "legacy-pubky": "npm:@synonymdev/pubky@0.9.3",
     "typescript": "~7.0.2",
     "vite": "^8.1.5"
   }
