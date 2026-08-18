@@ -468,7 +468,7 @@ function authRequestPreview(request: AuthRequestPreview) {
       <div class="section-title">
         <div>
           <p class="eyebrow">
-            ${request.authMode === "grant" ? "Grant authorization" : "Legacy cookie authorization"}
+            ${request.authMode === "grant" ? "Grant-based auth" : "Cookie-based auth"}
           </p>
           <h2>${request.kind === "signin" ? "Sign in request" : "Sign up request"}</h2>
         </div>
@@ -1373,8 +1373,8 @@ function authRequestSummary(request: AuthRequestPreview) {
   const source = request.xCallback?.xSource;
   const mode =
     request.authMode === "grant"
-      ? "Grant authorization"
-      : "Cookie authorization";
+      ? "Grant-based auth"
+      : "Cookie-based auth";
   const permissions = `${request.capabilities.length} permission${
     request.capabilities.length === 1 ? "" : "s"
   }`;
