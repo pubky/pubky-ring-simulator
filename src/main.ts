@@ -2,7 +2,9 @@ import { toSvg } from "jdenticon/browser";
 import "./style.css";
 import {
   approveAuthRequest,
+  assertLocalAuthRequest,
   assertSupportedAuthRequest,
+  callbackUrlFor,
   createIdentity,
   isIdentityReady,
   parseAuthRequest,
@@ -32,9 +34,15 @@ interface ApprovalHistoryItem {
 }
 
 interface LoginFeedback {
+  action?: LoginFeedbackAction;
   detail?: string;
-  kind: "progress" | "success" | "error";
+  kind: "progress" | "success" | "error" | "cancel";
   title: string;
+}
+
+interface LoginFeedbackAction {
+  label: string;
+  url: string;
 }
 
 type LocalServiceAccess = "waiting" | "checking" | "accessible" | "failed";
@@ -222,6 +230,17 @@ function loginFeedbackView() {
         <strong>${escapeHtml(feedback.title)}</strong>
         ${feedback.detail ? `<small>${escapeHtml(feedback.detail)}</small>` : ""}
       </span>
+      ${
+        feedback.action
+          ? `
+            <a
+              class="login-feedback-action"
+              href="${escapeHtml(feedback.action.url)}"
+              rel="noreferrer"
+            >${escapeHtml(feedback.action.label)}</a>
+          `
+          : ""
+      }
     </div>
   `;
 }
@@ -400,29 +419,98 @@ function authorizePage() {
         </div>
       </div>
 
-      <div class="authorize-actions">
-        <button id="paste-authorize-link" class="button authorize-source wide" type="button" ${disabledAttr()}>
-          ${clipboardIcon()} Paste link
-        </button>
-        <div class="authorize-divider"><span>or</span></div>
-
-        ${
-          state.scanActive
-            ? `
-              <button id="stop-scan" class="button authorize-source wide" type="button">
-                ${closeIcon()} Stop camera
-              </button>
-              ${captureView()}
-            `
-            : `
-              <button id="start-authorize-scan" class="button authorize-source wide" type="button" ${disabledAttr()}>
-                ${scanIcon()} Use camera
-              </button>
-            `
-        }
-        ${state.error ? `<p class="authorize-error">${escapeHtml(state.error)}</p>` : ""}
-      </div>
+      ${state.authRequest ? authRequestPreview(state.authRequest) : authorizeSources()}
     </section>
+  `;
+}
+
+function authorizeSources() {
+  return `
+    <div class="authorize-actions">
+      <button id="paste-authorize-link" class="button authorize-source wide" type="button" ${disabledAttr()}>
+        ${clipboardIcon()} Paste link
+      </button>
+      <div class="authorize-divider"><span>or</span></div>
+
+      ${
+        state.scanActive
+          ? `
+            <button id="stop-scan" class="button authorize-source wide" type="button">
+              ${closeIcon()} Stop camera
+            </button>
+            ${captureView()}
+          `
+          : `
+            <button id="start-authorize-scan" class="button authorize-source wide" type="button" ${disabledAttr()}>
+              ${scanIcon()} Use camera
+            </button>
+          `
+      }
+      ${state.error ? `<p class="authorize-error">${escapeHtml(state.error)}</p>` : ""}
+    </div>
+  `;
+}
+
+function authRequestPreview(request: AuthRequestPreview) {
+  const source = request.xCallback?.xSource;
+  const permissions = request.capabilities.length
+    ? request.capabilities.map(permissionPreview).join("")
+    : '<p class="muted">No storage permissions requested.</p>';
+
+  return `
+    <div class="request-preview">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">
+            ${request.authMode === "grant" ? "Grant authorization" : "Legacy cookie authorization"}
+          </p>
+          <h2>${request.kind === "signin" ? "Sign in request" : "Sign up request"}</h2>
+        </div>
+        <span class="verified">${checkIcon()} Parsed</span>
+      </div>
+      ${
+        source
+          ? `<p class="request-source">App label <strong>${escapeHtml(source)}</strong></p>`
+          : ""
+      }
+      ${
+        request.clientId
+          ? `<p class="request-client-id">Client ID <code>${escapeHtml(request.clientId)}</code></p>`
+          : ""
+      }
+      ${
+        request.homeserver
+          ? `<p class="muted">Homeserver: ${escapeHtml(shortPubky(request.homeserver))}</p>`
+          : ""
+      }
+      <div class="permission-list">${permissions}</div>
+      <div class="request-actions">
+        <button id="approve-auth-request" class="button accent wide" type="button" ${disabledAttr()}>
+          ${checkIcon()} Authorize
+        </button>
+        <button id="cancel-auth-request" class="button authorize-source wide" type="button" ${disabledAttr()}>
+          Cancel
+        </button>
+      </div>
+      ${state.error ? `<p class="authorize-error">${escapeHtml(state.error)}</p>` : ""}
+    </div>
+  `;
+}
+
+function permissionPreview(capability: string) {
+  const separator = capability.lastIndexOf(":");
+  const scope = separator >= 0 ? capability.slice(0, separator) : capability;
+  const actions = separator >= 0 ? capability.slice(separator + 1) : "";
+  const access =
+    actions === "rw" ? "Read and write" : actions === "r" ? "Read" : "Write";
+  const target = scope.endsWith("/") ? "Directory" : "Exact path";
+
+  return `
+    <div class="permission">
+      <span>${folderIcon()}</span>
+      <code title="${escapeHtml(scope)}">${escapeHtml(scope)}</code>
+      <small>${target} · ${access}</small>
+    </div>
   `;
 }
 
@@ -779,6 +867,12 @@ function handleClick(event: MouseEvent) {
     case "paste-authorize-link":
       void handlePasteAuthorizeLink();
       break;
+    case "approve-auth-request":
+      void handleApproveAuthRequest();
+      break;
+    case "cancel-auth-request":
+      handleCancelAuthRequest();
+      break;
     case "stop-scan":
       stopScanCapture("QR capture stopped.");
       break;
@@ -868,12 +962,14 @@ function handleRename(form: HTMLFormElement) {
 async function handleQuickAuth(authLink: string) {
   state.authInput = authLink;
   beginLoginFeedback("Signing in…");
+  let request: AuthRequestPreview | undefined;
 
   await run("Checking the local auth request…", async () => {
-    const request = assertSupportedAuthRequest(
+    request = assertSupportedAuthRequest(
       parseAuthRequest(state.authInput),
     );
     state.authRequest = request;
+    beginLoginFeedback("Signing in…", authRequestSummary(request));
     const identity = await identityForQuickAuth();
 
     updateBusy(`Signing in as ${identityName(identity)}…`);
@@ -890,11 +986,21 @@ async function handleQuickAuth(authLink: string) {
   });
 
   if (state.error) {
-    showLoginFeedback("Login failed", "error", state.error);
+    showLoginFeedback(
+      "Login failed",
+      "error",
+      state.error,
+      feedbackAction(request, "error"),
+    );
   } else {
     state.authInput = "";
     state.authRequest = undefined;
-    showLoginFeedback("Logged in", "success");
+    showLoginFeedback(
+      "Logged in",
+      "success",
+      request ? authRequestSummary(request) : undefined,
+      feedbackAction(request, "success"),
+    );
   }
 }
 
@@ -916,15 +1022,28 @@ async function handlePasteAuthorizeLink() {
 }
 
 async function handleAuthorizeInput(input: string) {
-  const identity = authorizeIdentity();
-  if (!identity) return;
-
   state.authInput = input;
-  beginLoginFeedback("Signing in…");
+  clearStatus();
+
+  try {
+    const request = assertLocalAuthRequest(parseAuthRequest(state.authInput));
+    state.authRequest = request;
+  } catch (error) {
+    state.authRequest = undefined;
+    setError(error);
+  }
+
+  render();
+}
+
+async function handleApproveAuthRequest() {
+  const identity = authorizeIdentity();
+  const request = state.authRequest;
+  if (!identity || !request) return;
+
+  beginLoginFeedback("Approving auth request…", authRequestSummary(request));
 
   await run("Approving auth request…", async () => {
-    const request = parseAuthRequest(state.authInput);
-    state.authRequest = request;
     const readyIdentity = await signUpIdentity(identity);
     setActiveIdentity(readyIdentity);
     await approveAuthRequest(readyIdentity, request.url);
@@ -940,13 +1059,40 @@ async function handleAuthorizeInput(input: string) {
   });
 
   if (state.error) {
-    showLoginFeedback("Login failed", "error", state.error);
+    showLoginFeedback(
+      "Authorization failed",
+      "error",
+      state.error,
+      feedbackAction(request, "error"),
+    );
     return;
   }
 
   state.authInput = "";
   state.authRequest = undefined;
-  showLoginFeedback("Logged in", "success");
+  showLoginFeedback(
+    "Authorized",
+    "success",
+    authRequestSummary(request),
+    feedbackAction(request, "success"),
+  );
+  window.location.hash = identityDetailHref(identity.id);
+}
+
+function handleCancelAuthRequest() {
+  const identity = authorizeIdentity();
+  const request = state.authRequest;
+  if (!identity || !request) return;
+
+  state.authInput = "";
+  state.authRequest = undefined;
+  clearStatus();
+  showLoginFeedback(
+    "Authorization cancelled",
+    "cancel",
+    authRequestSummary(request),
+    feedbackAction(request, "cancel"),
+  );
   window.location.hash = identityDetailHref(identity.id);
 }
 
@@ -1217,6 +1363,42 @@ function clearStatus() {
   state.notice = undefined;
 }
 
+function authRequestSummary(request: AuthRequestPreview) {
+  const source = request.xCallback?.xSource;
+  const mode =
+    request.authMode === "grant"
+      ? "Grant authorization"
+      : "Cookie authorization";
+  const permissions = `${request.capabilities.length} permission${
+    request.capabilities.length === 1 ? "" : "s"
+  }`;
+
+  return [
+    mode,
+    source ? `from ${source}` : undefined,
+    request.clientId ? `client ${request.clientId}` : undefined,
+    permissions,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function feedbackAction(
+  request: AuthRequestPreview | undefined,
+  outcome: "success" | "error" | "cancel",
+) {
+  if (!request) return undefined;
+  const url = callbackUrlFor(request, outcome);
+  if (!url) return undefined;
+
+  return {
+    label: request.xCallback?.xSource
+      ? `Return to ${request.xCallback.xSource}`
+      : "Return to app",
+    url,
+  };
+}
+
 function beginLoginFeedback(title: string, detail?: string) {
   window.clearTimeout(loginFeedbackTimer);
   loginFeedbackTimer = undefined;
@@ -1225,11 +1407,12 @@ function beginLoginFeedback(title: string, detail?: string) {
 
 function showLoginFeedback(
   title: string,
-  kind: "success" | "error",
+  kind: "success" | "error" | "cancel",
   detail?: string,
+  action?: LoginFeedbackAction,
 ) {
   window.clearTimeout(loginFeedbackTimer);
-  const feedback: LoginFeedback = { detail, kind, title };
+  const feedback: LoginFeedback = { action, detail, kind, title };
   state.loginFeedback = feedback;
   render();
 
@@ -1240,7 +1423,7 @@ function showLoginFeedback(
       loginFeedbackTimer = undefined;
       render();
     },
-    kind === "success" ? 4_500 : 7_000,
+    action ? 15_000 : kind === "success" ? 4_500 : 7_000,
   );
 }
 
@@ -1362,6 +1545,12 @@ function closeIcon() {
 function clipboardIcon() {
   return svgIcon(
     '<path d="M9 5H7a2 2 0 0 0-2 2v12h14V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/>',
+  );
+}
+
+function folderIcon() {
+  return svgIcon(
+    '<path d="M3 6h6l2 2h10v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6Z"/>',
   );
 }
 
