@@ -1612,23 +1612,19 @@ textarea:focus {
   text-align: center;
 }
 
-.site-footer span {
-  color: #c0c4ca;
-  opacity: 1;
+.site-footer .sdk-version {
+  color: var(--ring-blue);
 }
 
 .site-footer a {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  color: #c0c4ca;
-  font-weight: 700;
-  opacity: 1;
   text-underline-offset: 3px;
 }
 
-.site-footer a:hover {
-  color: #c0c4ca;
+.site-footer > a {
+  font-weight: 700;
 }
 
 .site-footer svg {

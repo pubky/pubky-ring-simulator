@@ -1,3 +1,4 @@
+import pubkyPackage from "@synonymdev/pubky/package.json";
 import { toSvg } from "jdenticon/browser";
 import "./style.css";
 import {
@@ -74,6 +75,7 @@ interface State {
 }
 
 const PUBKY_DOCKER_URL = "https://github.com/pubky/pubky-docker";
+const PUBKY_SDK_URL = "https://www.npmjs.com/package/@synonymdev/pubky";
 const PROJECT_URL = "https://github.com/pubky/pubky-ring-simulator";
 const RING_LOGO_URL = "https://pubkyring.app/pubky-ring-logo.svg";
 const LOCAL_SERVICES: LocalService[] = [
@@ -179,6 +181,10 @@ function render() {
 
       <footer class="site-footer">
         <span>Identities disappear on page reload.</span>
+        <span class="sdk-version">
+          <a href="${PUBKY_SDK_URL}" target="_blank" rel="noreferrer">Pubky SDK</a>
+          v${escapeHtml(pubkyPackage.version)}
+        </span>
         <a href="${PROJECT_URL}" target="_blank" rel="noreferrer">
           ${githubIcon()} GitHub project ${externalIcon()}
         </a>
