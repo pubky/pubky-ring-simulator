@@ -12,7 +12,7 @@
     "test": "tsc -p tsconfig.test.json && node --test .test-dist/test/pubky.test.js"
   },
   "dependencies": {
-    "@synonymdev/pubky": "^0.10.0",
+    "@synonymdev/pubky": "^0.11.0",
     "jdenticon": "^3.3.0"
   },
   "devDependencies": {
