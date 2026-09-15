@@ -468,7 +468,7 @@ function authRequestPreview(request: AuthRequestPreview) {
       <div class="section-title">
         <div>
           <p class="eyebrow">
-            ${request.authMode === "grant" ? "Grant-based auth" : "Cookie-based auth"}
+            ${request.authMode === "grant" ? "Grant auth" : "Legacy cookie auth"}
           </p>
           <h2>${request.kind === "signin" ? "Sign in request" : "Sign up request"}</h2>
         </div>

@@ -60,6 +60,35 @@ supported because the simulator creates and registers test identities itself.
 If a request contains callback destinations, the result notification offers a return-to-app link.
 Callback destinations are untrusted and are only opened after you select that link.
 
+## Integrating an app
+
+Use `startGrantAuthFlow` for new integrations. Pubky SDK 0.12
+[deprecates cookie authentication APIs](https://github.com/pubky/pubky-homeserver/pull/546)
+in favor of grants. The simulator continues to accept legacy cookie requests for testing older apps,
+including apps using SDK 0.9.3.
+
+Generate a grant sign-in request in your app using the local testnet:
+
+```ts
+import { AuthFlowKind, Pubky } from "@synonymdev/pubky";
+
+const pubky = Pubky.testnet();
+const flow = await pubky.startGrantAuthFlow(
+  "/pub/example.app/:rw",
+  AuthFlowKind.signin(),
+  {
+    clientId: "example.app",
+    relay: "http://localhost:15412/inbox/",
+  },
+);
+
+// Paste this link into the simulator, or display it as a QR code in your app.
+console.log(flow.authorizationUrl);
+
+// Resolves after approval in the simulator.
+const session = await flow.awaitApproval();
+```
+
 ## Development
 
 ```bash
@@ -73,8 +102,14 @@ Build the production site with:
 npm run build
 ```
 
-Run the auth-link parser tests with:
+Run the auth-link parser and SDK-generated grant request tests with:
 
 ```bash
 npm test
+```
+
+Check compatibility with older apps using SDK 0.9.3:
+
+```bash
+node --test test/sdk-0.9-compatibility.test.mjs
 ```
