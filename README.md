@@ -62,8 +62,8 @@ Callback destinations are untrusted and are only opened after you select that li
 
 ## Integrating an app
 
-Use `startGrantAuthFlow` for new integrations. Pubky SDK 0.12
-[deprecates cookie authentication APIs](https://github.com/pubky/pubky-homeserver/pull/546)
+Use `startGrantAuthFlow` for new integrations.
+[Cookie authentication APIs are deprecated](https://github.com/pubky/pubky-homeserver/pull/546)
 in favor of grants. The simulator continues to accept legacy cookie requests for testing older apps,
 including apps using SDK 0.9.3.
 
