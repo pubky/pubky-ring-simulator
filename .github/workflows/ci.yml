@@ -56,5 +56,41 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Test SDK 0.9.3 compatibility
-        run: node --test test/sdk-0.9-compatibility.test.mjs
+  compatibility:
+    name: SDK ${{ matrix.sdk }} compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Stable requester releases since 2025-10-08. Refresh the rolling year
+        # during each SDK upgrade, including every patch release in the window.
+        sdk: ["0.6.0", "0.7.0", "0.8.0", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.10.0", "0.11.0", "0.12.0", "0.13.0", "0.14.0", "0.15.0"]
+    env:
+      PUBKY_REQUESTER_VERSION: ${{ matrix.sdk }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up npm
+        run: npm install --global npm@11
+
+      - name: Install simulator dependencies
+        run: npm ci
+
+      - name: Install isolated requester SDK
+        shell: bash
+        run: |
+          requester_dir=$(mktemp -d "$RUNNER_TEMP/pubky-requester.XXXXXX")
+          npm --prefix "$requester_dir" install --ignore-scripts --no-package-lock --no-audit --no-fund "@synonymdev/pubky@$PUBKY_REQUESTER_VERSION"
+          printf 'PUBKY_REQUESTER_MODULE=%s\n' "$requester_dir/node_modules/@synonymdev/pubky" >> "$GITHUB_ENV"
+
+      - name: Test simulator compatibility
+        run: npm run test:compatibility
