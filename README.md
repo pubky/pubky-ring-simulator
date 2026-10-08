@@ -64,8 +64,8 @@ Callback destinations are untrusted and are only opened after you select that li
 
 Use `startGrantAuthFlow` for new integrations.
 [Cookie authentication APIs are deprecated](https://github.com/pubky/pubky-homeserver/pull/546)
-in favor of grants. The simulator continues to accept legacy cookie requests for testing older apps,
-including apps using SDK 0.9.3.
+in favor of grants. The simulator supports apps using stable JavaScript SDK releases published in
+the preceding year, including legacy cookie authentication where those releases require it.
 
 Generate a grant sign-in request in your app using the local testnet:
 
@@ -108,8 +108,23 @@ Run the auth-link parser and SDK-generated grant request tests with:
 npm test
 ```
 
-Check compatibility with older apps using SDK 0.9.3:
+Check requester-to-simulator compatibility with the installed SDK:
 
 ```bash
-node --test test/sdk-0.9-compatibility.test.mjs
+npm run test:compatibility
+```
+
+CI also tests historical requester SDKs installed in isolation. Its compatibility matrix is refreshed
+during SDK upgrades to cover stable releases published in the preceding year, including both legacy
+relay formats and grant requests. These tests exercise the simulator's parsing, local signup policy,
+and cookie approval exchange; a complete SDK upgrade also requires a live local-testnet browser test.
+
+To test another requester version locally, install it in a temporary directory and point the shared
+suite at that package. For example:
+
+```bash
+pubky_requester_dir=$(mktemp -d)
+npm install --prefix "$pubky_requester_dir" --no-package-lock --ignore-scripts @synonymdev/pubky@0.9.3
+PUBKY_REQUESTER_MODULE="$pubky_requester_dir/node_modules/@synonymdev/pubky" npm run test:compatibility
+rm -rf "$pubky_requester_dir"
 ```
