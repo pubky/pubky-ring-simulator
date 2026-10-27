@@ -7,6 +7,7 @@ import {
   SigninGrantDeepLink,
   SignupDeepLink,
   SignupGrantDeepLink,
+  validateCapabilities,
   type XCallbackParams,
 } from "@synonymdev/pubky";
 
@@ -87,11 +88,21 @@ export function isIdentityReady(identity: SignerIdentity) {
 export async function approveAuthRequest(
   identity: SignerIdentity,
   input: string,
+  approvedCapabilities?: string,
 ) {
   const request = assertLocalAuthRequest(parseAuthRequest(input));
 
   try {
-    await pubky.signer(identity.keypair).approveAuthRequest(request.url);
+    const capabilities = approvedCapabilities === undefined
+      ? undefined
+      : validateCapabilities(approvedCapabilities);
+    const signer = pubky.signer(identity.keypair);
+    if (capabilities === undefined) {
+      await signer.approveAuthRequest(request.url);
+    } else {
+      await signer.approveAuthWithCapabilities(request.url, capabilities);
+      return { ...request, capabilities: splitCapabilities(capabilities) };
+    }
   } catch (error) {
     throw pubkyOperationError(error, "approve");
   }

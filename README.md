@@ -33,12 +33,17 @@ The app only works when the default testnet environment is running on the same m
 git clone https://github.com/pubky/pubky-docker.git
 cd pubky-docker
 cp .env-sample .env
+docker compose --profile backend pull homeserver
 docker compose --profile backend up -d
 ```
 
 The simulator assumes Pubky Docker's default Homeserver identity, local ports, admin endpoint, and
-admin password. Grant requests require a Homeserver build with grant authentication support, so use
-an up-to-date Pubky Docker environment.
+admin password. Grant requests require a Homeserver build with grant authentication support.
+Requests containing the `e` action also need support for scoped encryption keys. Pull the Homeserver
+image before starting an existing stack: a cached image tagged `latest` may predate these features.
+Check the running image and the Homeserver version reported by its admin `/info` endpoint when
+diagnosing compatibility; starting the containers alone does not establish support. See the
+[SDK deployment guidance](https://github.com/pubky/pubky-homeserver/blob/v0.17.1/docs/scoped-encryption-keys.md#compatibility-and-deployment).
 
 ## Quick auth
 
@@ -56,6 +61,16 @@ Regular mode previews whether a request uses grant or legacy cookie authenticati
 requesting application when provided, and shows whether each capability targets an exact path or a
 directory. Signup requests must target the default local Homeserver. Direct-signup links are not
 supported because the simulator creates and registers test identities itself.
+
+In regular mode, select which requested read, write, and encryption-key permissions to approve for
+each scope. Deselecting every permission still approves the identity with no capabilities; Cancel
+declines the request. Quick auth approves all requested permissions. This lets an app test a user
+declining optional access without abandoning sign-in.
+
+The `e` action delivers encryption/decryption keys for the approved scope; it does not grant storage
+reads or writes. Keys remain usable after a grant expires or is revoked. A directory key covers all
+files below that directory, while an exact-path key covers only that file. Use disposable test
+identities and request narrow scopes.
 
 If a request contains callback destinations, the result notification offers a return-to-app link.
 Callback destinations are untrusted and are only opened after you select that link.
@@ -89,6 +104,36 @@ console.log(flow.authorizationUrl);
 const session = await flow.awaitApproval();
 ```
 
+To request scoped encryption keys, use signed approvals and include `e` on the scopes needing keys:
+
+```ts
+const encryptedFlow = await pubky.startGrantAuthFlow(
+  "/pub/example.app/:rwe",
+  AuthFlowKind.signin(),
+  {
+    clientId: "example.app",
+    relay: "http://localhost:15412/inbox/",
+    approvalFormat: "signedApprovalV1",
+  },
+);
+// Submit encryptedFlow.authorizationUrl to the simulator.
+const encryptedSession = await encryptedFlow.awaitApproval();
+// Inspect the approved capabilities: the user may decline e or storage access.
+const approved = encryptedSession.capabilities;
+const keys = encryptedSession.grant?.encryptionKeys;
+```
+
+Signed approvals use HPKE to deliver the approval to the requesting app. The SDK handles this
+exchange; requesting `e` requires `signedApprovalV1`. See the
+[scoped encryption keys guide](https://github.com/pubky/pubky-homeserver/blob/v0.17.1/docs/scoped-encryption-keys.md)
+for deriving keys and handling reduced approvals.
+
+If approval returns HTTP **413** while the app keeps waiting, the signed approval may exceed the
+relay's body limit (2 KiB by default). Request fewer or shorter scopes, or configure your local relay
+with an appropriate limit following the
+[relay guidance](https://github.com/pubky/pubky-homeserver/blob/v0.17.1/docs/scoped-encryption-keys.md#relay-limits).
+Restart the request after correcting the limit; the SDK does not fall back to a bare grant.
+
 ## Development
 
 ```bash
@@ -116,8 +161,10 @@ npm run test:compatibility
 
 CI also tests historical requester SDKs installed in isolation. Its compatibility matrix is refreshed
 during SDK upgrades to cover stable releases published in the preceding year, including both legacy
-relay formats and grant requests. These tests exercise the simulator's parsing, local signup policy,
-and cookie approval exchange; a complete SDK upgrade also requires a live local-testnet browser test.
+relay formats and grant requests. These tests exercise the simulator's parsing, signed approval
+links and encryption scopes, local signup policy, and cookie approval exchange with full, reduced,
+and empty permissions. A complete SDK upgrade also requires a live local-testnet browser test for
+grant sessions and encryption-key delivery.
 
 To test another requester version locally, install it in a temporary directory and point the shared
 suite at that package. For example:

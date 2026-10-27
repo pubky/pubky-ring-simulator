@@ -1,6 +1,7 @@
 import pubkyPackage from "@synonymdev/pubky/package.json";
 import { toSvg } from "jdenticon/browser";
 import "./style.css";
+import { capabilityDetails, selectedCapabilities } from "./capabilities";
 import {
   approveAuthRequest,
   assertLocalAuthRequest,
@@ -62,6 +63,7 @@ interface State {
   approvals: ApprovalHistoryItem[];
   authInput: string;
   authRequest?: AuthRequestPreview;
+  authApprovedActions: string[];
   busy?: string;
   error?: string;
   identities: SignerIdentity[];
@@ -109,6 +111,7 @@ const htmlEscapes: Record<string, string> = {
 const state: State = {
   approvals: [],
   authInput: "",
+  authApprovedActions: [],
   identities: [],
   identityNames: {},
   localAccessExplanationVisible: false,
@@ -459,9 +462,12 @@ function authorizeSources() {
 
 function authRequestPreview(request: AuthRequestPreview) {
   const source = request.xCallback?.xSource;
+  const requestsEncryptionKeys = request.capabilities.some((capability) =>
+    capabilityDetails(capability).actions.some(({ action }) => action === "e"),
+  );
   const permissions = request.capabilities.length
     ? request.capabilities.map(permissionPreview).join("")
-    : '<p class="muted">No storage permissions requested.</p>';
+    : '<p class="muted">No permissions requested.</p>';
 
   return `
     <div class="request-preview">
@@ -489,7 +495,13 @@ function authRequestPreview(request: AuthRequestPreview) {
           ? `<p class="muted">Homeserver: ${escapeHtml(shortPubky(request.homeserver))}</p>`
           : ""
       }
+      ${request.capabilities.length
+        ? '<p class="muted">Choose which permissions to approve.</p>'
+        : ""}
       <div class="permission-list">${permissions}</div>
+      ${requestsEncryptionKeys
+        ? '<p class="muted">Encryption keys remain usable after a grant expires or is revoked.</p>'
+        : ""}
       <div class="request-actions">
         <button id="approve-auth-request" class="button accent wide" type="button" ${disabledAttr()}>
           ${checkIcon()} Authorize
@@ -503,19 +515,23 @@ function authRequestPreview(request: AuthRequestPreview) {
   `;
 }
 
-function permissionPreview(capability: string) {
-  const separator = capability.lastIndexOf(":");
-  const scope = separator >= 0 ? capability.slice(0, separator) : capability;
-  const actions = separator >= 0 ? capability.slice(separator + 1) : "";
-  const access =
-    actions === "rw" ? "Read and write" : actions === "r" ? "Read" : "Write";
-  const target = scope.endsWith("/") ? "Directory" : "Exact path";
+function permissionPreview(capability: string, index: number) {
+  const { scope, actions, target } = capabilityDetails(capability);
 
   return `
-    <div class="permission">
+    <div class="permission" role="group" aria-label="Permissions for ${escapeHtml(scope)}">
       <span>${folderIcon()}</span>
       <code title="${escapeHtml(scope)}">${escapeHtml(scope)}</code>
-      <small>${target} · ${access}</small>
+      <small>${target}</small>
+      <div class="permission-actions">
+        ${actions.map(({ action, label }) => `
+          <label>
+            <input type="checkbox" data-capability-index="${index}" data-capability-action="${action}"
+              ${state.authApprovedActions[index]?.includes(action) ? "checked" : ""} ${disabledAttr()}>
+            ${label}
+          </label>
+        `).join("")}
+      </div>
     </div>
   `;
 }
@@ -912,6 +928,25 @@ function handleSubmit(event: SubmitEvent) {
 
 function handleInput(event: Event) {
   const input = event.target;
+  if (
+    input instanceof HTMLInputElement &&
+    input.dataset.capabilityIndex !== undefined
+  ) {
+    if (state.busy || !state.authRequest) return;
+    const index = Number(input.dataset.capabilityIndex);
+    const action = input.dataset.capabilityAction;
+    const capability = state.authRequest.capabilities[index];
+    if (
+      !capability ||
+      !action ||
+      !capabilityDetails(capability).actions.some((item) => item.action === action)
+    ) return;
+    const selected = state.authApprovedActions[index] ?? "";
+    state.authApprovedActions[index] = input.checked
+      ? `${selected}${action}`
+      : selected.replaceAll(action, "");
+    return;
+  }
   if (!(input instanceof HTMLTextAreaElement)) return;
   if (input.id !== "shortcut-auth-input") return;
 
@@ -1034,6 +1069,9 @@ async function handleAuthorizeInput(input: string) {
   try {
     const request = assertLocalAuthRequest(parseAuthRequest(state.authInput));
     state.authRequest = request;
+    state.authApprovedActions = request.capabilities.map((capability) =>
+      capabilityDetails(capability).actions.map(({ action }) => action).join(""),
+    );
   } catch (error) {
     state.authRequest = undefined;
     setError(error);
@@ -1045,18 +1083,34 @@ async function handleAuthorizeInput(input: string) {
 async function handleApproveAuthRequest() {
   const identity = authorizeIdentity();
   const request = state.authRequest;
-  if (!identity || !request) return;
+  if (!identity || !request || state.busy) return;
 
-  beginLoginFeedback("Approving auth request…", authRequestSummary(request));
+  const approvedCapabilities = selectedCapabilities(
+    request.capabilities,
+    state.authApprovedActions,
+  ).join(",");
+  const approvedRequest = {
+    ...request,
+    capabilities: approvedCapabilities ? approvedCapabilities.split(",") : [],
+  };
+
+  beginLoginFeedback(
+    "Approving auth request…",
+    authRequestSummary(approvedRequest),
+  );
 
   await run("Approving auth request…", async () => {
     const readyIdentity = await signUpIdentity(identity);
     setActiveIdentity(readyIdentity);
-    await approveAuthRequest(readyIdentity, request.url);
+    const approved = await approveAuthRequest(
+      readyIdentity,
+      request.url,
+      approvedCapabilities,
+    );
     state.approvals = [
       {
         at: new Date().toISOString(),
-        capabilities: request.capabilities,
+        capabilities: approved.capabilities,
         publicKey: readyIdentity.publicKey,
       },
       ...state.approvals,
@@ -1079,7 +1133,7 @@ async function handleApproveAuthRequest() {
   showLoginFeedback(
     "Authorized",
     "success",
-    authRequestSummary(request),
+    authRequestSummary(approvedRequest),
     feedbackAction(request, "success"),
   );
   window.location.hash = identityDetailHref(identity.id);
