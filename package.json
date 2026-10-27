@@ -13,7 +13,7 @@
     "test:compatibility": "tsc -p tsconfig.test.json && node --test test/sdk-compatibility.test.mjs"
   },
   "dependencies": {
-    "@synonymdev/pubky": "^0.16.1",
+    "@synonymdev/pubky": "^0.17.1",
     "jdenticon": "^3.3.0"
   },
   "devDependencies": {

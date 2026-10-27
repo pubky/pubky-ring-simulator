@@ -28,31 +28,40 @@ const TESTNET_HOMESERVER =
   "8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
 
 for (const intent of ["signin", "signup"]) {
-  test(`the simulator approves an SDK ${version} cookie ${intent} request`, async () => {
-    const relay = await startRelay(version === "0.6.0" ? "link" : "inbox");
+  for (const [selection, capabilities] of [
+    ["all requested permissions", undefined],
+    ["read only", "/pub/example.app/:r"],
+    ["no permissions", ""],
+  ]) {
+    test(`the simulator approves SDK ${version} cookie ${intent} with ${selection}`, async () => {
+      const relay = await startRelay(version === "0.6.0" ? "link" : "inbox");
 
-    try {
-      const requester = requesterSdk.Pubky.testnet();
-      const startFlow = requester.startCookieAuthFlow ?? requester.startAuthFlow;
-      const flow = startFlow.call(requester, CAPABILITIES, authKind(intent), relay.url);
-      const request = parseAuthRequest(flow.authorizationUrl);
-      assertPreview(request, intent, "cookie", relay.url);
+      try {
+        const requester = requesterSdk.Pubky.testnet();
+        const startFlow = requester.startCookieAuthFlow ?? requester.startAuthFlow;
+        const flow = startFlow.call(requester, CAPABILITIES, authKind(intent), relay.url);
+        const request = parseAuthRequest(flow.authorizationUrl);
+        assertPreview(request, intent, "cookie", relay.url);
 
-      const identity = createIdentity();
-      const approved = await withTimeout(
-        approveAuthRequest(identity, flow.authorizationUrl),
-        10_000,
-      );
-      assert.deepEqual(approved, request);
-      const token = await withTimeout(flow.awaitToken(), 10_000);
+        const identity = createIdentity();
+        const approved = await withTimeout(
+          approveAuthRequest(identity, flow.authorizationUrl, capabilities),
+          10_000,
+        );
+        const expected = capabilities === undefined
+          ? [CAPABILITIES]
+          : capabilities ? [capabilities] : [];
+        assert.deepEqual(approved, { ...request, capabilities: expected });
+        const token = await withTimeout(flow.awaitToken(), 10_000);
 
-      assert.equal(token.publicKey.toString(), identity.publicKey);
-      assert.deepEqual(Array.from(token.capabilities), [CAPABILITIES]);
-      assert.equal(relay.posts, 1);
-    } finally {
-      await relay.close();
-    }
-  });
+        assert.equal(token.publicKey.toString(), identity.publicKey);
+        assert.deepEqual(Array.from(token.capabilities), expected);
+        assert.equal(relay.posts, 1);
+      } finally {
+        await relay.close();
+      }
+    });
+  }
 
   if (requesterSdk.GrantAuthFlow) {
     test(`the simulator previews an SDK ${version} grant ${intent} request`, () => {
@@ -73,7 +82,71 @@ for (const intent of ["signin", "signup"]) {
       }
     });
   }
+
+  // Signed approvals and encryption scopes first shipped in the JS SDK 0.16.0.
+  const [major, minor] = version.split(".").map(Number);
+  if (major > 0 || minor >= 16) {
+    for (const actions of ["e", "re", "rwe"]) {
+      test(`the simulator preserves SDK ${version} signed ${intent} with ${actions}`, () => {
+        const capabilities = `/pub/example.app/:${actions}`;
+        const flow = requesterSdk.GrantAuthFlow.start(
+          capabilities,
+          authKind(intent),
+          {
+            clientId: "example.app",
+            relay: "http://127.0.0.1:15403/inbox",
+            approvalFormat: "signedApprovalV1",
+            xCallback: { xSuccess: "https://example.invalid/return" },
+          },
+        );
+        try {
+          const request = parseAuthRequest(flow.authorizationUrl);
+          assert.equal(request.authMode, "grant");
+          assert.equal(request.kind, intent);
+          assert.deepEqual(request.capabilities, [capabilities]);
+          assert.equal(request.xCallback?.xSuccess, "https://example.invalid/return");
+          assert.equal(assertLocalAuthRequest(request), request);
+          const original = new URL(flow.authorizationUrl);
+          const normalized = new URL(request.url);
+          assert.equal(normalized.searchParams.get("af"), "v1");
+          assert.equal(normalized.searchParams.get("epk"), original.searchParams.get("epk"));
+          assert(normalized.searchParams.get("epk"));
+          assert.equal(normalized.searchParams.has("secret"), false);
+        } finally {
+          flow.free();
+        }
+      });
+    }
+  }
 }
+
+test(`the simulator rejects SDK ${version} approvals that exceed an exact-file request`, async () => {
+  const relay = await startRelay(version === "0.6.0" ? "link" : "inbox");
+  const requester = requesterSdk.Pubky.testnet();
+  const identity = createIdentity();
+  const startFlow = requester.startCookieAuthFlow ?? requester.startAuthFlow;
+  const flow = startFlow.call(
+    requester,
+    "/pub/example.app/settings:r",
+    authKind("signin"),
+    relay.url,
+  );
+  try {
+    for (const approval of [
+      "/pub/example.app/:r",
+      "/pub/example.app/settings:rw",
+      "/pub/example.app/../:r",
+    ]) {
+      await assert.rejects(approveAuthRequest(identity, flow.authorizationUrl, approval));
+      assert.equal(relay.posts, 0);
+    }
+  } finally {
+    flow.free();
+    requester.free();
+    identity.keypair.free();
+    await relay.close();
+  }
+});
 
 function authKind(intent) {
   return intent === "signin"

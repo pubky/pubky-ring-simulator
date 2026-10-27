@@ -1510,6 +1510,27 @@ textarea:focus {
   font-size: 0.57rem;
 }
 
+.permission-actions {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.permission-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.65rem;
+}
+
+.permission-actions input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--ring-blue);
+}
+
 .muted {
   margin: 0;
   color: rgba(255, 255, 255, 0.42);

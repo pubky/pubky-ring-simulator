@@ -17,6 +17,7 @@ import {
   parseAuthRequest,
   pubky,
 } from "../src/pubky.js";
+import { capabilityDetails, selectedCapabilities } from "../src/capabilities.js";
 
 const LOCAL_HOMESERVER =
   "pubky8pinxxgqs41n4aididenw5apqp1urfmzdztr8jt4abrkdn435ewo";
@@ -30,6 +31,74 @@ const GRANT_CALLBACKS = {
   xError: "example://auth/error?state=one%20two",
   xCancel: "example://auth/cancel?state=one%20two",
 };
+
+test("describes encryption-key permissions independently of storage access", () => {
+  for (const [actions, labels] of [
+    ["r", ["Read"]],
+    ["w", ["Write"]],
+    ["rw", ["Read", "Write"]],
+    ["e", ["Encryption keys"]],
+    ["re", ["Read", "Encryption keys"]],
+    ["we", ["Write", "Encryption keys"]],
+    ["rwe", ["Read", "Write", "Encryption keys"]],
+  ] as const) {
+    const details = capabilityDetails(`/pub/example.app/:${actions}`);
+    assert.equal(details.scope, "/pub/example.app/");
+    assert.equal(details.target, "Directory");
+    assert.deepEqual(details.actions.map(({ label }) => label), labels);
+  }
+  assert.equal(capabilityDetails("/priv/example.app/settings:r").target, "Exact path");
+});
+
+test("selection removes actions and whole scopes without broadening exact-file permissions", () => {
+  const requested = ["/pub/example.app/:rwe", "/priv/example.app/settings:re"];
+  assert.deepEqual(selectedCapabilities(requested, ["re", "r"]), [
+    "/pub/example.app/:re",
+    "/priv/example.app/settings:r",
+  ]);
+  assert.deepEqual(selectedCapabilities(requested, ["", "e"]), [
+    "/priv/example.app/settings:e",
+  ]);
+  assert.deepEqual(selectedCapabilities(requested, ["", ""]), []);
+  assert.deepEqual(selectedCapabilities(["/priv/example.app/settings:r"], ["rwe"]), [
+    "/priv/example.app/settings:r",
+  ]);
+});
+
+test("dispatches selected, empty and default approvals and reports the approved capabilities", async (t) => {
+  const approveAll = t.mock.fn(async (_url: string) => {});
+  const approveSelected = t.mock.fn(async (_url: string, _capabilities: string) => {});
+  t.mock.method(pubky, "signer", () => ({
+    approveAuthRequest: approveAll,
+    approveAuthWithCapabilities: approveSelected,
+  }) as unknown as ReturnType<typeof pubky.signer>);
+  const identity = createIdentity();
+  const url = authUrl("signin", {
+    caps: "/pub/example.app/:rw",
+    relay: RELAY,
+    secret: SECRET,
+  });
+
+  try {
+    const selected = await approveAuthRequest(identity, url, "/pub/example.app/:r");
+    assert.deepEqual(selected.capabilities, ["/pub/example.app/:r"]);
+    assert.equal(approveSelected.mock.calls[0].arguments[1], "/pub/example.app/:r");
+
+    const empty = await approveAuthRequest(identity, url, "");
+    assert.deepEqual(empty.capabilities, []);
+    assert.equal(approveSelected.mock.calls[1].arguments[1], "");
+    assert.equal(approveAll.mock.callCount(), 0);
+
+    const all = await approveAuthRequest(identity, url);
+    assert.deepEqual(all.capabilities, ["/pub/example.app/:rw"]);
+    assert.equal(approveAll.mock.callCount(), 1);
+
+    await assert.rejects(approveAuthRequest(identity, url, "relative:r"), /invalid capability/i);
+    assert.equal(approveSelected.mock.callCount(), 2);
+  } finally {
+    identity.keypair.free();
+  }
+});
 
 function authUrl(intent: string, params: Record<string, string>) {
   const query = Object.entries(params)
