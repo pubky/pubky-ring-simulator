@@ -4,12 +4,15 @@ import "./style.css";
 import { capabilityDetails, selectedCapabilities } from "./capabilities";
 import {
   approveAuthRequest,
+  assertAuthRequestIdentity,
   assertLocalAuthRequest,
   assertSupportedAuthRequest,
   callbackUrlFor,
   createIdentity,
+  ExpectedSignerError,
   isIdentityReady,
   parseAuthRequest,
+  requiredIdentityForAuthRequest,
   signUpIdentity,
   type AuthRequestPreview,
   type SignerIdentity,
@@ -496,6 +499,9 @@ function authRequestPreview(request: AuthRequestPreview) {
           ? `<p class="muted">Homeserver: ${escapeHtml(shortPubky(request.homeserver))}</p>`
           : ""
       }
+      ${request.expectedSigner
+        ? `<p class="request-client-id">This app requires identity <code>${escapeHtml(request.expectedSigner)}</code>.</p>`
+        : ""}
       ${request.capabilities.length
         ? '<p class="muted">Choose which permissions to approve.</p>'
         : ""}
@@ -1027,6 +1033,7 @@ async function handleQuickAuth(authLink: string) {
   state.authInput = authLink;
   beginLoginFeedback("Signing in…");
   let request: AuthRequestPreview | undefined;
+  let identityRefused = false;
 
   await run("Checking the local auth request…", async () => {
     request = assertSupportedAuthRequest(
@@ -1034,7 +1041,13 @@ async function handleQuickAuth(authLink: string) {
     );
     state.authRequest = request;
     beginLoginFeedback("Signing in…", authRequestSummary(request));
-    const identity = await identityForQuickAuth();
+    let identity: SignerIdentity;
+    try {
+      identity = await identityForQuickAuth(request);
+    } catch (error) {
+      identityRefused = error instanceof ExpectedSignerError;
+      throw error;
+    }
 
     updateBusy(`Signing in as ${identityName(identity)}…`);
     await approveAuthRequest(identity, request.url);
@@ -1054,7 +1067,7 @@ async function handleQuickAuth(authLink: string) {
       "Login failed",
       "error",
       state.error,
-      feedbackAction(request, "error"),
+      identityRefused ? undefined : feedbackAction(request, "error"),
     );
   } else {
     state.authInput = "";
@@ -1107,6 +1120,7 @@ async function handleApproveAuthRequest() {
   const identity = authorizeIdentity();
   const request = state.authRequest;
   if (!identity || !request || state.busy) return;
+  let identityRefused = false;
 
   const approvedCapabilities = selectedCapabilities(
     request.capabilities,
@@ -1123,6 +1137,12 @@ async function handleApproveAuthRequest() {
   );
 
   await run("Approving auth request…", async () => {
+    try {
+      assertAuthRequestIdentity(request, identity);
+    } catch (error) {
+      identityRefused = error instanceof ExpectedSignerError;
+      throw error;
+    }
     const readyIdentity = await signUpIdentity(identity);
     setActiveIdentity(readyIdentity);
     const approved = await approveAuthRequest(
@@ -1146,7 +1166,7 @@ async function handleApproveAuthRequest() {
       "Authorization failed",
       "error",
       state.error,
-      feedbackAction(request, "error"),
+      identityRefused ? undefined : feedbackAction(request, "error"),
     );
     return;
   }
@@ -1179,7 +1199,15 @@ function handleCancelAuthRequest() {
   window.location.hash = identityDetailHref(identity.id);
 }
 
-async function identityForQuickAuth() {
+async function identityForQuickAuth(request: AuthRequestPreview) {
+  const requiredIdentity = requiredIdentityForAuthRequest(request, state.identities);
+  if (requiredIdentity) {
+    setActiveIdentityId(requiredIdentity.id);
+    updateBusy("Checking the identity required by this app…");
+    const verifiedIdentity = await signUpIdentity(requiredIdentity);
+    setActiveIdentity(verifiedIdentity);
+    return verifiedIdentity;
+  }
   const active = activeIdentity();
   const readyIdentity =
     active && isIdentityReady(active)
@@ -1460,6 +1488,7 @@ function authRequestSummary(request: AuthRequestPreview) {
     mode,
     source ? `from ${source}` : undefined,
     request.clientId ? `client ${request.clientId}` : undefined,
+    request.expectedSigner ? `app requires identity ${shortPubky(request.expectedSigner)}` : undefined,
     permissions,
   ]
     .filter(Boolean)

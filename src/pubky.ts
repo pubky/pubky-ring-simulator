@@ -40,6 +40,7 @@ export interface AuthRequestPreview {
   authMode: AuthMode;
   capabilities: string[];
   clientId?: string;
+  expectedSigner?: string;
   homeserver?: string;
   kind: AuthRequestKind;
   relay: string;
@@ -85,12 +86,44 @@ export function isIdentityReady(identity: SignerIdentity) {
   return identity.homeserver === TESTNET_HOMESERVER_PUBLIC_KEY;
 }
 
+export class ExpectedSignerError extends Error {}
+
+export function requiredIdentityForAuthRequest(
+  request: AuthRequestPreview,
+  identities: SignerIdentity[],
+) {
+  if (!request.expectedSigner) return undefined;
+  const identity = identities.find(
+    (identity) => identity.keypair.publicKey.toString() === request.expectedSigner,
+  );
+  if (!identity) {
+    throw new ExpectedSignerError(
+      "The identity required by this app is not available. " +
+        "Identities are kept only until this page is reloaded.",
+    );
+  }
+  return identity;
+}
+
+export function assertAuthRequestIdentity(
+  request: AuthRequestPreview,
+  identity: SignerIdentity,
+) {
+  if (
+    request.expectedSigner &&
+    identity.keypair.publicKey.toString() !== request.expectedSigner
+  ) {
+    throw new ExpectedSignerError("This app requires a different identity.");
+  }
+}
+
 export async function approveAuthRequest(
   identity: SignerIdentity,
   input: string,
   approvedCapabilities?: string,
 ) {
   const request = assertLocalAuthRequest(parseAuthRequest(input));
+  assertAuthRequestIdentity(request, identity);
 
   try {
     const capabilities = approvedCapabilities === undefined
@@ -285,6 +318,7 @@ function tryParseSigninGrant(url: string) {
         authMode: "grant" as const,
         capabilities: splitCapabilities(link.capabilities),
         clientId: link.clientId,
+        expectedSigner: link.expectedSigner?.toString(),
         kind: "signin" as const,
         relay: link.baseRelayUrl,
         url: link.toString(),

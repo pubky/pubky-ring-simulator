@@ -54,6 +54,11 @@ Paste or screen-scan a `pubkyauth://` cookie or grant sign-in request and use th
 - If no registered identity exists, the simulator creates one, registers it on the default local
   Homeserver, and approves the sign-in request in one flow.
 
+If an app requires a specific identity for reauthorization, quick auth uses that identity when it is
+still held in memory. Otherwise, it refuses the request locally. Regular mode displays the required
+identity and refuses approval with a different identity. These refusals do not offer a return-to-app
+callback.
+
 Registration details remain hidden, including obtaining any server-required registration
 credential from the default local admin endpoint.
 

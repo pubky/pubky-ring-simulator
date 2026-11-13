@@ -4,9 +4,9 @@ import { createServer } from "node:http";
 import { test } from "node:test";
 import {
   AuthFlowKind,
+  GrantAuthFlow,
   Pubky,
   PublicKey,
-  type GrantAuthFlow,
 } from "@synonymdev/pubky";
 import {
   approveAuthRequest,
@@ -14,8 +14,10 @@ import {
   assertSupportedAuthRequest,
   callbackUrlFor,
   createIdentity,
+  ExpectedSignerError,
   parseAuthRequest,
   pubky,
+  requiredIdentityForAuthRequest,
 } from "../src/pubky.js";
 import { capabilityDetails, selectedCapabilities } from "../src/capabilities.js";
 
@@ -126,6 +128,48 @@ test("parses a legacy cookie sign-in request and callbacks", () => {
   assert.equal(request.xCallback?.xSource, "Example App");
   assert.equal(callbackUrlFor(request, "success"), success);
 });
+
+for (const approvalFormat of ["bareGrant", "signedApprovalV1"] as const) {
+  test(`selects the required held identity for an SDK ${approvalFormat} request and rejects other signing keys`, async (t) => {
+    const required = createIdentity();
+    const other = createIdentity();
+    const signer = t.mock.method(pubky, "signer", () => {
+      throw new Error("A mismatched identity must not reach the signer.");
+    });
+    const flow = GrantAuthFlow.start(
+      "/pub/example.app/:rw",
+      AuthFlowKind.signin(),
+      {
+        clientId: "example.app",
+        relay: RELAY,
+        approvalFormat,
+        expectedSigner: required.publicKey,
+      },
+    );
+    try {
+      const request = parseAuthRequest(flow.authorizationUrl);
+      assert.equal(request.expectedSigner, required.publicKey);
+      assert.equal(request.url, flow.authorizationUrl);
+      assert.equal(requiredIdentityForAuthRequest(request, [other, required]), required);
+      assert.throws(
+        () => requiredIdentityForAuthRequest(request, [other]),
+        ExpectedSignerError,
+      );
+      assert.equal(requiredIdentityForAuthRequest({ ...request, expectedSigner: undefined }, []), undefined);
+
+      // Metadata must not substitute for possession of the requested signing key.
+      await assert.rejects(
+        approveAuthRequest({ ...other, publicKey: required.publicKey }, request.url),
+        ExpectedSignerError,
+      );
+      assert.equal(signer.mock.callCount(), 0);
+    } finally {
+      flow.free();
+      required.keypair.free();
+      other.keypair.free();
+    }
+  });
+}
 
 for (const kind of ["signin", "signup"] as const) {
   test(`parses an SDK-generated grant ${kind} request`, async () => {
