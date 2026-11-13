@@ -130,6 +130,7 @@ let localServiceProbeActive = false;
 let localServiceProbeEnabled = false;
 let localServicePermissionPromptPending = false;
 let localServicePermissionStatus: PermissionStatus | undefined;
+let localAccessExplanationAcknowledged = false;
 
 app.addEventListener("click", handleClick);
 app.addEventListener("submit", handleSubmit);
@@ -612,6 +613,15 @@ function localServicesPanel() {
       <ul aria-live="polite">
         ${LOCAL_SERVICES.map(localServiceRow).join("")}
       </ul>
+      ${
+        localAccessExplanationAcknowledged &&
+        !localServicePermissionPromptPending &&
+        !localServiceProbeEnabled &&
+        localServicePermissionStatus?.state === "prompt"
+          ? `<p class="muted">If needed, start the local testnet or check your browser's site permissions, then try again.</p>
+             <button id="continue-local-access" class="button" type="button">Try again</button>`
+          : ""
+      }
     </aside>
   `;
 }
@@ -745,7 +755,7 @@ function handleLocalServicePermissionChange() {
 function applyLocalServicePermission(permissionState: PermissionState) {
   if (permissionState === "prompt") {
     localServiceProbeEnabled = false;
-    state.localAccessExplanationVisible = true;
+    state.localAccessExplanationVisible = !localAccessExplanationAcknowledged;
     setLocalServiceAccess("waiting");
     render();
     return;
@@ -753,6 +763,7 @@ function applyLocalServicePermission(permissionState: PermissionState) {
 
   if (permissionState === "denied") {
     localServiceProbeEnabled = false;
+    state.localAccessExplanationVisible = false;
     setLocalServiceAccess("failed");
     render();
     return;
@@ -779,23 +790,35 @@ async function probeLocalServices() {
   )
     return;
   localServiceProbeActive = true;
+  const promptingPermission = localServicePermissionPromptPending;
 
   try {
-    await Promise.all(
-      LOCAL_SERVICES.map(async (service) => {
+    if (promptingPermission) {
+      // Firefox can replace concurrent permission prompts with each other.
+      for (const service of LOCAL_SERVICES) {
+        if (localServicePermissionStatus?.state === "denied") break;
         state.localServiceAccess[service.port] =
           await probeLocalService(service);
         refreshLocalServicesPanel();
-      }),
-    );
+      }
+    } else {
+      await Promise.all(
+        LOCAL_SERVICES.map(async (service) => {
+          state.localServiceAccess[service.port] =
+            await probeLocalService(service);
+          refreshLocalServicesPanel();
+        }),
+      );
+    }
   } finally {
     localServiceProbeActive = false;
     localServicePermissionPromptPending = false;
-    if (state.localAccessExplanationVisible) {
-      if (localServicePermissionStatus?.state === "granted")
-        state.localAccessExplanationVisible = false;
-      render();
+    if (promptingPermission && localServicePermissionStatus?.state !== "granted") {
+      // An offline service or a dismissed prompt can leave permission unresolved.
+      // Require another click instead of prompting again on the polling timer.
+      localServiceProbeEnabled = false;
     }
+    refreshLocalServicesPanel();
   }
 }
 
@@ -875,12 +898,12 @@ function handleClick(event: MouseEvent) {
 
   switch (button.id) {
     case "continue-local-access":
+      localAccessExplanationAcknowledged = true;
+      state.localAccessExplanationVisible = false;
       localServiceProbeEnabled = true;
       localServicePermissionPromptPending = true;
       setLocalServiceAccess("checking");
-      button.disabled = true;
-      button.textContent = "Waiting for permission…";
-      refreshLocalServicesPanel();
+      render();
       void probeLocalServices();
       break;
     case "start-authorize-scan":
