@@ -171,8 +171,12 @@ shared `pubky/ci-workflows` actions. The existing CI workflow remains unchanged.
 - Load-balancer domain: `simulator.pubkyring.app`
 
 The Dockerfile audits dependencies, runs unit tests, builds the Vite site, and
-serves `dist` with unprivileged Nginx. The simulator still connects to services on
-the visitor's local machine, not services inside the Cloud Run container.
+serves `dist` with a standalone Node.js static server (`sirv-cli`) running as a
+non-root user. No Nginx is used. This is a Vite app, not a Next.js app, so Next.js
+standalone output does not apply. The server binds to `0.0.0.0` and uses Cloud Run's
+`PORT` environment variable (default `8080` in the image).
+The simulator still connects to services on the visitor's local machine, not
+services inside the Cloud Run container.
 
 Make the GitHub Actions secrets `GRC_INFRA_READ_WRITE` (Artifact Registry push
 credentials) and `CLOUDRUN_INFRA` (Cloud Run deployment credentials) available to
