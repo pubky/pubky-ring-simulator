@@ -14,9 +14,9 @@ concurrency:
 
 env:
   REGISTRY: europe-west6-docker.pkg.dev/infra-464608/synonym-private-repo
-  IMAGE: simulator-pubkyring
+  IMAGE: simulator-pubky-ring
   REGION: europe-west6
-  SERVICE: simulator-pubkyring
+  SERVICE: simulator-pubky-ring
 
 jobs:
   deploy:
