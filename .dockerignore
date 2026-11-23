@@ -1,0 +1,13 @@
+.git
+.github
+.agents
+node_modules
+dist
+dist-ssr
+.test-dist
+coverage
+*.tsbuildinfo
+*.log
+.env*
+*.local
+gha-creds-*.json

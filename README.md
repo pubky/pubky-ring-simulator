@@ -158,6 +158,51 @@ Run the auth-link parser and SDK-generated grant request tests with:
 npm test
 ```
 
+## Cloud Run deployment
+
+`.github/workflows/deploy.yml` replaces the GitHub Pages deployment. Pushes to
+`main` or manual runs build and deploy a commit-SHA-tagged container using the
+shared `pubky/ci-workflows` actions. The existing CI workflow remains unchanged.
+
+- Cloud Run service and image: `simulator-pubkyring`
+- Region: `europe-west6`
+- Registry: `europe-west6-docker.pkg.dev/infra-464608/synonym-private-repo`
+- Container port: `8080`
+- Load-balancer domain: `simulator.pubkyring.app`
+
+The Dockerfile audits dependencies, runs unit tests, builds the Vite site, and
+serves `dist` with a standalone Node.js static server (`sirv-cli`) running as a
+non-root user. No Nginx is used. This is a Vite app, not a Next.js app, so Next.js
+standalone output does not apply. The server binds to `0.0.0.0` and uses Cloud Run's
+`PORT` environment variable (default `8080` in the image).
+The simulator still connects to services on the visitor's local machine, not
+services inside the Cloud Run container.
+
+Make the GitHub Actions secrets `GRC_INFRA_READ_WRITE` (Artifact Registry push
+credentials) and `CLOUDRUN_INFRA` (Cloud Run deployment credentials) available to
+this repository. The deployment account must be able to deploy the service, act
+as its runtime service account, and configure unauthenticated invocation.
+
+Cloud Run ingress allows internal traffic and Cloud Load Balancing.
+Unauthenticated invocation lets the load balancer's serverless NEG reach the
+service. The existing load balancer must route `simulator.pubkyring.app` to
+`simulator-pubkyring` in `europe-west6`. The exact simulator hostname must have
+its own service entry alongside the website's `*.pubkyring.app` entry; the exact
+host rule takes precedence over the wildcard. DNS, TLS, and load-balancer resources
+are managed separately. Disable GitHub Pages in repository settings at cutover;
+removing its workflow does not unpublish an existing Pages deployment.
+
+To test the production container locally:
+
+```bash
+docker build -t simulator-pubkyring .
+docker run --rm -p 8080:8080 simulator-pubkyring
+```
+
+Open `http://localhost:8080/`.
+
+## SDK compatibility testing
+
 Check requester-to-simulator compatibility with the installed SDK:
 
 ```bash
