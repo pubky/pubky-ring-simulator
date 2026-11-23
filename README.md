@@ -164,7 +164,7 @@ npm test
 `main` or manual runs build and deploy a commit-SHA-tagged container using the
 shared `pubky/ci-workflows` actions. The existing CI workflow remains unchanged.
 
-- Cloud Run service and image: `simulator-pubkyring-app`
+- Cloud Run service and image: `simulator-pubkyring`
 - Region: `europe-west6`
 - Registry: `europe-west6-docker.pkg.dev/infra-464608/synonym-private-repo`
 - Container port: `8080`
@@ -182,15 +182,15 @@ as its runtime service account, and configure unauthenticated invocation.
 Cloud Run ingress allows internal traffic and Cloud Load Balancing.
 Unauthenticated invocation lets the load balancer's serverless NEG reach the
 service. The existing load balancer must route `simulator.pubkyring.app` to
-`simulator-pubkyring-app` in `europe-west6`. DNS, TLS, and load-balancer resources
+`simulator-pubkyring` in `europe-west6`. DNS, TLS, and load-balancer resources
 are managed separately. Disable GitHub Pages in repository settings at cutover;
 removing its workflow does not unpublish an existing Pages deployment.
 
 To test the production container locally:
 
 ```bash
-docker build -t simulator-pubkyring-app .
-docker run --rm -p 8080:8080 simulator-pubkyring-app
+docker build -t simulator-pubkyring .
+docker run --rm -p 8080:8080 simulator-pubkyring
 ```
 
 Open `http://localhost:8080/`.
